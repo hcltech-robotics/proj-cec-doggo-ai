@@ -1,0 +1,3 @@
+std_msgs/Header header
+float32 reading
+float32 scaled_reading
