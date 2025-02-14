@@ -59,7 +59,7 @@ class ResidualSEBlock(nn.Module):
 
 class GaugeNet(nn.Module):
     def __init__(self):
-        super(GaugeNet2, self).__init__()
+        super(GaugeNet, self).__init__()
         
         # Example: Use residual blocks with increasing channels.
         self.layer1 = nn.Sequential(
@@ -135,7 +135,7 @@ def main(args):
     # -----------------------------
     # 5. Initialize Model, Loss, and Optimizer
     # -----------------------------
-    model = GaugeNet2().to(device)
+    model = GaugeNet().to(device)
     criterion = nn.MSELoss()  # Mean Squared Error for regression
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
