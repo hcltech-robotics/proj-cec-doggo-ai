@@ -1,6 +1,10 @@
 .vscode
 __pycache__
 checkpoints
+<<<<<<< HEAD
 venv
 test
 test_data
+=======
+venv
+>>>>>>> 2d1cb64 (feat: download checkpoints)
