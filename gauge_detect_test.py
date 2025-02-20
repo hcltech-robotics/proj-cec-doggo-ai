@@ -148,6 +148,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     main(args)
+<<<<<<< HEAD
 
 
 #python3 gauge_detect_test.py --input_dir /home/ifodor/Documents/Projects/omniverse-examples/extracted_images --model_path checkpoints/gauge_detect.pt --score_threshold 0.999 --output_dir /home/ifodor/Documents/Projects/omniverse-examples/labeled_images
+=======
+>>>>>>> 1ad18c8 (feat: test code for detection)
