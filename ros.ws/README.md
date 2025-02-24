@@ -32,3 +32,12 @@ Run the following command to launch the gauge reader:
 ros2 run gauge_net gauge_reader --ros-args -p model_file:=../checkpoints/gauge_net_ResidualSEBlock_with_boxes.pt
 ```
 
+## Running Both Nodes with a Launch File  
+
+To start both the gauge detector and gauge reader nodes using a single launch file, use:  
+```bash
+ros2 launch gauge_net gauge_net.launch.py \
+    gauge_detector_weights:=/path/to/gauge_detect.pt \
+    gauge_reader_weights:=/path/to/gauge_net_ResidualSEBlock_with_boxes.pt
+```
+
