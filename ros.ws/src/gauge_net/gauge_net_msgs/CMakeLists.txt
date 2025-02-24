@@ -10,9 +10,15 @@ find_package(ament_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
+# Generate ROS interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GaugeReading.msg"
   DEPENDENCIES std_msgs
 )
 
+# Export dependencies so other packages can use them
+ament_export_dependencies(std_msgs)
+ament_export_dependencies(rosidl_default_runtime)
+
+# Make the package available to other packages
 ament_package()
