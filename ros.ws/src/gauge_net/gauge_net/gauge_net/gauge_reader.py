@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from gauge_net_msgs.msg import GaugeReading
+from gauge_net_interface.msg import GaugeReading
 
 
 class GaugeReader(Node):
