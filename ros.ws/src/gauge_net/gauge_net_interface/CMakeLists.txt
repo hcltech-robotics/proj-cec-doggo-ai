@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(gauge_net_msgs)
+project(gauge_net_interface)
 
 if(POLICY CMP0148)
   cmake_policy(SET CMP0148 OLD)
