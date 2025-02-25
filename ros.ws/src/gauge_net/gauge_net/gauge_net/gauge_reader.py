@@ -8,6 +8,7 @@ import torchvision.transforms as transforms
 
 
 class GaugeReader(Node):
+
     def __init__(self):
         super().__init__('resnet_image_processor')
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

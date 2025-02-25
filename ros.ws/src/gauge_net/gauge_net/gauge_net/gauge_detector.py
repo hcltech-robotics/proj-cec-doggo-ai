@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 
 
 class GaugeDetector(Node):
+
     def __init__(self):
         super().__init__('GaugeDetector')
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
