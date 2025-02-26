@@ -1,5 +1,7 @@
+from ament_index_python.packages import get_package_share_directory
 import launch
 import launch_ros.actions
+import os
 
 
 def generate_launch_description():
@@ -9,6 +11,11 @@ def generate_launch_description():
     # Declare launch arguments
     gauge_detector_weights = launch.substitutions.LaunchConfiguration('gauge_detector_weights')
     gauge_reader_weights = launch.substitutions.LaunchConfiguration('gauge_reader_weights')
+
+    # QoS configuration file
+    qos_config = os.path.join(
+        get_package_share_directory('gauge_net'), 'config', 'qos_config.yaml'
+    )
 
     ld.add_action(
         launch.actions.DeclareLaunchArgument(
@@ -28,7 +35,7 @@ def generate_launch_description():
             package='gauge_net',
             executable='gauge_detector',
             name='gauge_detector',
-            parameters=[{'model_file': gauge_detector_weights}],
+            parameters=[{'model_file': gauge_detector_weights}, qos_config],
         )
     )
 
@@ -38,7 +45,7 @@ def generate_launch_description():
             package='gauge_net',
             executable='gauge_reader',
             name='gauge_reader',
-            parameters=[{'model_file': gauge_reader_weights}],
+            parameters=[{'model_file': gauge_reader_weights}, qos_config],
         )
     )
 
