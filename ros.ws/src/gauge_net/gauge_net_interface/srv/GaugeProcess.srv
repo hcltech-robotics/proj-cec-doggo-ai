@@ -1,5 +1,26 @@
+# GaugeProcess.srv
+#
+# Service to process gauge images in either single or continuous mode.
+#
+# Request:
+#   header - Standard ROS2 header containing timestamp and frame information.
+#   process_mode - Processing mode (see constants below).
+#
+# @values
+#   MODE_DO_NOTHING (0) - Do nothing (default state).
+#   MODE_PROCESS_ONE_IMAGE (1) - Process a single image.
+#   MODE_CONTINUOUS_PROCESSING (2) - Process images continuously.
+#
+# Returns:
+#   success - Indicates if the processing request was accepted.
+#   info - Additional information about the processing result or errors.
+
+int8 MODE_DO_NOTHING = 0
+int8 MODE_PROCESS_ONE_IMAGE = 1
+int8 MODE_CONTINUOUS_PROCESSING = 2
+
 std_msgs/Header header
-int8 process_mode # 0 = do nothing, 1 = process one image, 2 = continuous processing
+int8 process_mode
 ---
 bool success
-string message
+string info
