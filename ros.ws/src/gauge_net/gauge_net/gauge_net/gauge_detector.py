@@ -68,6 +68,12 @@ class GaugeDetector(Node):
         return response
 
     def image_callback(self, msg):
+
+        if self.process_mode_ == GaugeProcess.Request.MODE_DO_NOTHING:
+            return
+        elif self.process_mode_ == GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE:
+            self.process_mode_ = GaugeProcess.Request.MODE_DO_NOTHING
+
         # Convert ROS2 image to OpenCV format
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
 
