@@ -2,6 +2,8 @@ from cv_bridge import CvBridge
 from gauge_net_interface.msg import GaugeReading
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSPolicyKind
+from rclpy.qos_overriding_options import QoSOverridingOptions
 from sensor_msgs.msg import Image
 import torch
 import torchvision.transforms as transforms
@@ -36,7 +38,13 @@ class GaugeReader(Node):
 
         # ROS2 Image subscriber and publisher
         self.image_sub = self.create_subscription(
-            Image, 'processed_image', self.image_callback, 10
+            Image,
+            'processed_image',
+            self.image_callback,
+            1,
+            qos_overriding_options=QoSOverridingOptions(
+                [QoSPolicyKind.RELIABILITY, QoSPolicyKind.HISTORY, QoSPolicyKind.DURABILITY]
+            ),
         )
         self.reading_pub = self.create_publisher(GaugeReading, 'gauge_reading', 10)
 
