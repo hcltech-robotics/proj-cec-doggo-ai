@@ -13,6 +13,7 @@ find_package(rosidl_default_generators REQUIRED)
 # Generate ROS interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GaugeReading.msg"
+  "srv/GaugeProcess.srv"
   DEPENDENCIES std_msgs
 )
 
