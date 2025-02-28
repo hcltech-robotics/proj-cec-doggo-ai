@@ -43,13 +43,15 @@ def main(args):
     results = []
     
     with torch.no_grad():
-        for images, labels in data_loader:
+        for images, bbox, labels in data_loader:
             images = images.to(device)
             labels = labels.to(device)
-            outputs = model(images)
+            bbox = bbox.to(device) 
+            outputs = model(images, bbox)
             # Iterate over the batch and record each prediction and label.
             for pred, label in zip(outputs.cpu(), labels.cpu()):
                 results.append((pred.item(), label.item()))
+            print(len(results))
 
     # Save the results to CSV.
     with open(args.output_csv, 'w', newline='') as csvfile:
@@ -58,11 +60,15 @@ def main(args):
         writer.writerows(results)
     print(f"Results saved to {args.output_csv}")
 
+
     error = 0
     for result in results:
         error += abs(result[0] - result[1])
         if abs(result[0] - result[1]) > 0.03:
             print(f"Error: {error}", "Result:", result)
+    
+    mse_error = None
+
 
     print(f"Mean error: {error/len(results)}")
 

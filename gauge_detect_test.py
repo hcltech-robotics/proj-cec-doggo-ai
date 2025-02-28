@@ -32,10 +32,7 @@ def draw_boxes(image, boxes, labels, scores, score_threshold=0.5):
     """
     draw = ImageDraw.Draw(image)
     # Try to use a truetype font; fall back to default if unavailable
-    try:
-        font = ImageFont.truetype("arial.ttf", size=15)
-    except IOError:
-        font = ImageFont.load_default()
+    font = ImageFont.load_default(size = 20)
 
     # Mapping from numerical labels to human-readable strings
     label_map = {1: "gauge", 2: "gauge_needle"}
@@ -151,3 +148,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     main(args)
+
+
+#python3 gauge_detect_test.py --input_dir /home/ifodor/Documents/Projects/omniverse-examples/extracted_images --model_path checkpoints/gauge_detect.pt --score_threshold 0.999 --output_dir /home/ifodor/Documents/Projects/omniverse-examples/labeled_images

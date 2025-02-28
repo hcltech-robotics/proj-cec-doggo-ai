@@ -11,6 +11,12 @@ import torchvision.transforms as transforms
 import numpy as np
 from gauge_dataset import GaugeDataset
 
+import torch
+import torch.nn as nn
+
+# -----------------------------
+# Squeeze-and-Excitation (SE) Block
+# -----------------------------
 class SEBlock(nn.Module):
     def __init__(self, channels, reduction=16):
         super(SEBlock, self).__init__()
@@ -31,6 +37,9 @@ class SEBlock(nn.Module):
         # Scale the input feature map
         return x * y
 
+# -----------------------------
+# Residual Block with SE
+# -----------------------------
 class ResidualSEBlock(nn.Module):
     def __init__(self, in_channels, out_channels, downsample=False, reduction=16):
         super(ResidualSEBlock, self).__init__()
@@ -55,11 +64,20 @@ class ResidualSEBlock(nn.Module):
         out = self.bn2(self.conv2(out))
         out = self.se(out)
         out += identity
-        return self.relu(out)
+        out = self.relu(out)
+        return out
 
+# -----------------------------
+# Deeper GaugeNet with Enhanced Regressor
+# -----------------------------
 class GaugeNet(nn.Module):
     def __init__(self):
         super(GaugeNet, self).__init__()
+        # # Initial stem similar to ResNet's first layers
+        # self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3)  # (B, 64, H/2, W/2)
+        # self.bn1 = nn.BatchNorm2d(64)
+        # self.relu = nn.ReLU(inplace=True)
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)    # (B, 64, H/4, W/4)
         
         # Example: Use residual blocks with increasing channels.
         self.layer1 = nn.Sequential(
@@ -88,31 +106,62 @@ class GaugeNet(nn.Module):
             nn.AdaptiveAvgPool2d((1, 1))
         )
         
+        # Global average pooling to get a (B, 512, 1, 1) feature map
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        
+        # Enhanced Regressor: combine CNN features (512) with bbox (4) to get a gauge reading.
         self.regressor = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(512, 512),
+            nn.Flatten(),  # flatten to shape (B, 512)
+            nn.Linear(512 + 4, 512),
+            nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(256, 1)
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(128, 1)
         )
     
-    def forward(self, x):
+    def forward(self, x, bbox):
+        """
+        x: input image tensor of shape (B, 3, H, W) -- expects the cropped gauge face (e.g., 512x512)
+        bbox: needle bounding box tensor of shape (B, 4) with normalized coordinates.
+        """
+        # # Initial stem
+        # x = self.conv1(x)
+        # x = self.bn1(x)
+        # x = self.relu(x)
+        # x = self.maxpool(x)
+        
+        # CNN backbone
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-        x = self.regressor(x)
-        return x
+        
+        # Global pooling and flattening
+        x = self.avgpool(x)
+        features = x.view(x.size(0), -1)  # Shape: (B, 512)
+        
+        # Concatenate features with the bounding box (B, 4) -> (B, 516)
+        combined = torch.cat([features, bbox], dim=1)
+        
+        output = self.regressor(combined)
+        return output
 
+# -----------------------------
+# Main Training Routine
+# -----------------------------
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-    # -----------------------------
+    
     # 3. Define Data Transformations
-    # -----------------------------
     transform = transforms.Compose([
         transforms.Resize((512, 512)),
         transforms.ToTensor(),
@@ -121,9 +170,8 @@ def main(args):
                              std=[0.229, 0.224, 0.225])
     ])
 
-    # -----------------------------
     # 4. Create Dataset and Split into Train/Test
-    # -----------------------------
+    # Note: Ensure your GaugeDataset now returns (image, needle_bbox, target)
     dataset = GaugeDataset(image_dir=args.image_dir, json_file=args.json_file, transform=transform, box_only=args.box_only)
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
@@ -132,27 +180,30 @@ def main(args):
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
-    # -----------------------------
     # 5. Initialize Model, Loss, and Optimizer
-    # -----------------------------
     model = GaugeNet().to(device)
+    if args.finetune:
+        model.load_state_dict(torch.load(args.finetune_weights, map_location=device, weights_only=True))
+        print(f"Loaded weights from {args.finetune_weights} for fine-tuning.")
+        
     criterion = nn.MSELoss()  # Mean Squared Error for regression
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, verbose=True)
 
-    # -----------------------------
     # 6. Training Loop
-    # -----------------------------
-    # Training loop
     for epoch in range(args.num_epochs):
         model.train()
         running_loss = 0.0
-
-        for images, targets in train_loader:
+        batch = 0
+        # Update loop to unpack (images, bbox, targets)
+        for images, bbox, targets in train_loader:
+            print(f"Batch {batch+1}/{len(train_loader)}")
+            batch +=1
             images = images.to(device)
+            bbox = bbox.to(device)    # bbox shape: (B, 4)
             targets = targets.to(device)
             optimizer.zero_grad()
-            outputs = model(images)
+            outputs = model(images, bbox)
             loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
@@ -165,10 +216,11 @@ def main(args):
         model.eval()
         test_loss = 0.0
         with torch.no_grad():
-            for images, needle_bounding_boxes, targets in test_loader:
+            for images, bbox, targets in test_loader:
                 images = images.to(device)
+                bbox = bbox.to(device)
                 targets = targets.to(device)
-                outputs = model(images)
+                outputs = model(images, bbox)
                 loss = criterion(outputs, targets)
                 test_loss += loss.item()
         avg_test_loss = test_loss / len(test_loader)
@@ -177,17 +229,17 @@ def main(args):
         # Adjust the learning rate based on test loss
         scheduler.step(avg_test_loss)
 
+        # Optionally, save a TorchScript version of the model each epoch.
         model.eval()
-        dummy_input = torch.randn(1, 3, 512, 512).to(device)
-        scripted_model = torch.jit.trace(model, dummy_input)
+        scripted_model = torch.jit.script(model)
         torch.jit.save(scripted_model, args.save_model)
-        print(f"Model saved as TorchScript to {args.save_model}")
 
-    # Save the trained model
-    
+        state_dict_path = args.save_model + '_state_dict.pth'
+        torch.save(model.state_dict(), state_dict_path)
+        print(f"Epoch complete. TorchScript model saved as '{args.save_model}'. State dict saved as '{state_dict_path}'.")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Train a gauge reading model.')
+    parser = argparse.ArgumentParser(description='Train a gauge reading CNN + Transformer model.')
     parser.add_argument('--image_dir', type=str, required=True,
                         help="Directory containing the gauge images (e.g., './images').")
     parser.add_argument('--json_file', type=str, default='rotations.json',
@@ -201,7 +253,11 @@ if __name__ == '__main__':
     parser.add_argument('--save_model', type=str, default='gauge_net.pt',
                         help="Path to save the trained model.")
     parser.add_argument('--box_only', action='store_true',
-                        help="if set, only train on bounding boxes")
+                        help="If set, only train on bounding boxes")
+    parser.add_argument('--finetune', action='store_true',
+                        help="Load existing model weights for fine-tuning.")
+    parser.add_argument('--finetune_weights', type=str,
+                        help="Weights used for fine-tuning.")
     args = parser.parse_args()
     
     main(args)
