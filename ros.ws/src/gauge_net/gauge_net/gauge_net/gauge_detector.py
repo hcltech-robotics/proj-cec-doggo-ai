@@ -1,23 +1,30 @@
+from cv_bridge import CvBridge
+from gauge_net_interface.srv import GaugeProcess
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import Image
+from vision_msgs.msg import (
+    Detection2DArray, 
+    Detection2D, 
+    ObjectHypothesisWithPose, 
+    ObjectHypothesis
+)
+import cv2
 import torch
 import torchvision.transforms as transforms
-import cv2
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
-# Import the Detection2DArray message from vision_msgs
-from vision_msgs.msg import Detection2DArray, Detection2D, ObjectHypothesisWithPose, ObjectHypothesis
 
 class GaugeDetector(Node):
+
     def __init__(self):
-        super().__init__('GaugeDetector')
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        super().__init__('gauge_detecor')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         # Declare and get model file parameter
         self.declare_parameter('model_file', '')
         self.declare_parameter('min_gauge_score', 0.99)
         model_path = self.get_parameter('model_file').get_parameter_value().string_value
         self.min_gauge_score = self.get_parameter('min_gauge_score').get_parameter_value().double_value
-        
+
         # Load ResNet model
         self.model = torch.jit.load(model_path, map_location=self.device)
         self.model.eval()
@@ -30,6 +37,7 @@ class GaugeDetector(Node):
                                  std=[0.229, 0.224, 0.225])
         ])
 
+
         # Subscribers and Publishers:
         # - Subscribing to the incoming image.
         # - Publishing the gauge image (as is) and the Detection2DArray message.
@@ -37,10 +45,45 @@ class GaugeDetector(Node):
         self.gauge_pub = self.create_publisher(Image, 'gauge_image', 10)
         self.detections_pub = self.create_publisher(Detection2DArray, 'detections', 10)
 
+        # ROS2 Service to define how many images are processed
+        self.process_mode_ = GaugeProcess.Request.MODE_DO_NOTHING
+        self.image_process_mode_srv_ = self.create_service(
+            GaugeProcess, 'set_image_process_mode', self.set_image_process_mode_callback
+        )
+
         self.bridge = CvBridge()
-        self.get_logger().info("GaugeDetector Node Started")
+        self.get_logger().info('GaugeDetector Node Started')
+
+    def set_image_process_mode_callback(
+        self, request: GaugeProcess.Request, response: GaugeProcess.Response
+    ) -> GaugeProcess.Response:
+
+        PROCESS_MODE_NAMES = {
+            GaugeProcess.Request.MODE_DO_NOTHING: 'MODE_DO_NOTHING',
+            GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE: 'MODE_PROCESS_ONE_IMAGE',
+            GaugeProcess.Request.MODE_CONTINUOUS_PROCESSING: 'MODE_CONTINUOUS_PROCESSING',
+        }
+
+        mode_name = PROCESS_MODE_NAMES.get(request.process_mode)
+
+        if mode_name:
+            self.process_mode_ = request.process_mode
+            self.get_logger().debug(f'Set to {mode_name}')
+            response.success = True
+            response.info = f'Set to {mode_name}'
+        else:
+            self.get_logger().warning(f'Invalid process mode: {request.process_mode}')
+            response.success = False
+            response.info = f'Invalid process mode ({request.process_mode})'
+
+        return response
 
     def image_callback(self, msg):
+
+        if self.process_mode_ == GaugeProcess.Request.MODE_DO_NOTHING:
+            return
+        elif self.process_mode_ == GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE:
+            self.process_mode_ = GaugeProcess.Request.MODE_DO_NOTHING
 
         # Process the image for detection
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')

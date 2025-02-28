@@ -1,19 +1,18 @@
-import rclpy
-from rclpy.node import Node
-import torch
-import torchvision.transforms as transforms
-import cv2
-import numpy as np
-
-from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from gauge_net_msgs.msg import GaugeReading
-from vision_msgs.msg import Detection2DArray
-
+from gauge_net_interface.msg import GaugeReading
 # Import message_filters for synchronization.
 from message_filters import Subscriber, TimeSynchronizer
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from vision_msgs.msg import Detection2DArray
+import cv2
+import numpy as np
+import torch
+import torchvision.transforms as transforms
 
 class GaugeReader(Node):
+
     def __init__(self):
         super().__init__('gauge_reader')
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -151,6 +150,7 @@ class GaugeReader(Node):
         gauge_reading.reading = reading
         gauge_reading.scaled_reading = scaled_reading
         self.get_logger().info(f"BBOX: {bbox_tensor} Reading: {reading}, Scaled Reading: {scaled_reading}")
+
         self.reading_pub.publish(gauge_reading)
 
 
