@@ -43,6 +43,6 @@ The gauge reader sends `gauge_net_msgs/msg/GaugeReading` messages to the `/gauge
 To start both the gauge detector and gauge reader nodes using a single launch file, use:  
 ```bash
 ros2 launch gauge_net gauge_net.launch.py \
-    gauge_detector_weights:=/path/to/gauge_detect.pt \
-    gauge_reader_weights:=/path/to/gauge_net_ResidualSEBlock_with_boxes.pt
+    gauge_detector_weights:=/path/to/gauge_detect2.pt \
+    gauge_reader_weights:=/path/to/gauge_net_with_needle_boxed.pt
 ```
