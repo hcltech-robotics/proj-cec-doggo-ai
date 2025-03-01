@@ -20,7 +20,7 @@ ROTATION_MAX = 137
 CAMERA_PATH="/Replicator/Ref_Xform/Ref/RepCamera"
 
 NOW=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-OUTPUT_DIR = os.path.expanduser("~/data/gauge_data_basic_"+NOW)
+OUTPUT_DIR = os.path.expanduser("~/data/gauge_data_industry_"+NOW)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
@@ -76,12 +76,13 @@ with rep.new_layer() as layer:
             rep.modify.pose(rotation = rep.distribution.uniform((0, -60, 0), (0, 60, 0)))
 
         with camera:
-             rep.modify.pose(position=rep.distribution.uniform((camera_location[0]-0.1, camera_location[1]-0.2, camera_location[2]-0.2)
+             rep.modify.pose(position=rep.distribution.uniform((camera_location[0]-0.4, camera_location[1]-0.2, camera_location[2]-0.2)
                                                              , (camera_location[0]+0.1, camera_location[1]+0.2, camera_location[2]+0.2)))
         with light:
             rep.modify.attribute("intensity", rep.distribution.uniform(0.0, 1.2))
             rep.modify.attribute("exposure", rep.distribution.uniform(0.0, 1.5))
-            rep.modify.attribute("color", rep.distribution.uniform((0.1, 0.1, 0.1), (1.0, 1.0, 1.0)))
+            rep.modify.attribute("color", rep.distribution.uniform((0.6, 0.6, 0.6), (1.0, 1.0, 1.0)))
+            rep.modify.pose(rotation = rep.distribution.uniform((0, 0, 0), (360, 360, 360)))
         
     
     
@@ -95,9 +96,9 @@ async def run():
     rotations = []
     rotations_filename = "rotations.json"
     stage = get_current_stage()
-    for i in range(0, 5000):
+    for i in range(0, 10):
         # This renders one new frame (the subframes are needed for high quality raytracing)
-        await rep.orchestrator.step_async(rt_subframes=5)
+        await rep.orchestrator.step_async(rt_subframes=15)
         
         # Access a prim when the simulation is not running and read it's rotation.
         prim = get_prim_by_path(stage, GAUGE_NEEDLE_PATH)

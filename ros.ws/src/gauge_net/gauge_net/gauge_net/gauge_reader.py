@@ -17,7 +17,8 @@ class GaugeReader(Node):
     def __init__(self):
         super().__init__('gauge_reader')
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
+        self.model_input_size = (512, 512)
+
         # Declare parameters.
         self.declare_parameter('model_file', '')
         self.declare_parameter('min_score', 0.99)
@@ -35,10 +36,10 @@ class GaugeReader(Node):
         # Define image processing pipeline.
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize((512, 512)),
+            transforms.Resize(self.model_input_size),
+            transforms.Grayscale(num_output_channels=1),  # Converts to grayscale
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
+            transforms.Normalize(mean=[0.5], std=[0.5])
         ])
 
         # Publisher for the gauge reading.
@@ -83,6 +84,7 @@ class GaugeReader(Node):
                     needle_det = det
 
         # If either detection is missing, skip this observation.
+        print(gauge_det, needle_det)
         if gauge_det is None or needle_det is None:
             self.get_logger().warning("Missing valid gauge or needle detection (or confidence < 95%), skipping observation.")
             return
@@ -106,13 +108,15 @@ class GaugeReader(Node):
 
         # Crop the gauge from the image.
         gauge_crop = cv_image[g_y_min:g_y_max, g_x_min:g_x_max]
-
+        
         # Extract needle bounding box.
         n_box = needle_det.bbox
         n_center_x = n_box.center.position.x
         n_center_y = n_box.center.position.y
         n_size_x = n_box.size_x
         n_size_y = n_box.size_y
+
+        # Compute the needle bounding box in the gauge crop.
         n_x_min = n_center_x - n_size_x / 2.0
         n_y_min = n_center_y - n_size_y / 2.0
         n_x_max = n_center_x + n_size_x / 2.0
@@ -128,13 +132,18 @@ class GaugeReader(Node):
         # Normalize the needle bbox relative to the gauge crop.
         gauge_width = g_x_max - g_x_min
         gauge_height = g_y_max - g_y_min
+
         norm_n_x_min = (n_x_min - g_x_min) / gauge_width
         norm_n_y_min = (n_y_min - g_y_min) / gauge_height
         norm_n_x_max = (n_x_max - g_x_min) / gauge_width
         norm_n_y_max = (n_y_max - g_y_min) / gauge_height
-        bbox_norm = [norm_n_x_min, norm_n_y_min, norm_n_x_max, norm_n_y_max]
-        bbox_tensor = torch.tensor(bbox_norm, dtype=torch.float32).unsqueeze(0)
-        print(bbox_tensor)
+
+        norm_n_x_min *= self.model_input_size[0] / gauge_width
+        norm_n_y_min *= self.model_input_size[1] / gauge_height
+        norm_n_x_max *= self.model_input_size[0] / gauge_width
+        norm_n_y_max *= self.model_input_size[1] / gauge_height
+
+        bbox_tensor = torch.tensor([norm_n_x_min, norm_n_y_min, norm_n_x_max, norm_n_y_max], dtype=torch.float32).unsqueeze(0)
         # Transform the gauge crop to a tensor (model expects 512x512 input).
         gauge_crop_tensor = self.transform(gauge_crop).unsqueeze(0).to(self.device)
 

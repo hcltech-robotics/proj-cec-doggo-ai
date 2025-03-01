@@ -10,10 +10,12 @@ class GaugeDataset(Dataset):
     Dataset for loading gauge images and their corresponding rotation labels.
     Only includes data where both gauge and needle bounding boxes are present.
     """
-    def __init__(self, image_dir, json_file, transform=None, box_only=False):
+    def __init__(self, image_dir, json_file, transform=None, box_only=False, x_size = None, y_size = None):
         self.image_dir = image_dir
         self.transform = transform
         self.box_only = box_only
+        self.x_size = x_size
+        self.y_size = y_size
 
         # Load the JSON data
         json_path = json_file if os.path.isabs(json_file) else os.path.join(image_dir, json_file)
@@ -112,6 +114,18 @@ class GaugeDataset(Dataset):
                 (needle_y_max - gauge_y_min) / gauge_height
             ]
             image = cropped_image
+
+            ## Resize image
+            if self.x_size and self.y_size:
+                original_size = image.size
+                image = image.resize((self.x_size, self.y_size))
+
+                # Update needle bbox
+                needle_bbox[0] *= self.x_size / original_size[0]
+                needle_bbox[1] *= self.y_size / original_size[1]
+                needle_bbox[2] *= self.x_size / original_size[0]
+                needle_bbox[3] *= self.y_size / original_size[1]
+
         else:
             # If not box_only, return a default bbox covering the full image.
             needle_bbox = [0, 0, 1, 1]

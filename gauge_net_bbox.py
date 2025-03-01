@@ -67,6 +67,26 @@ class ResidualSEBlock(nn.Module):
         out = self.relu(out)
         return out
 
+class AttentionFusion(nn.Module):
+    def __init__(self, img_dim, bbox_dim, proj_dim):
+        super().__init__()
+        # Project bbox features from bbox_dim to proj_dim
+        self.bbox_proj = nn.Linear(bbox_dim, proj_dim)
+        # The attention layer now expects img_dim + proj_dim features
+        self.attention = nn.Linear(img_dim + proj_dim, 1)
+
+    def forward(self, img_features, bbox_features):
+        # Project bbox_features to match image feature dimensions (or any desired dimension)
+        projected_bbox = self.bbox_proj(bbox_features)
+        # Concatenate image features and projected bbox features
+        combined = torch.cat([img_features, projected_bbox], dim=1)
+        attn_scores = self.attention(combined)
+        attn_scores = torch.sigmoid(attn_scores)  # Scalar weight per sample
+        # Blend features with learned importance
+        fused_features = attn_scores * img_features + (1 - attn_scores) * projected_bbox
+        return fused_features
+
+
 # -----------------------------
 # Deeper GaugeNet with Enhanced Regressor
 # -----------------------------
@@ -81,7 +101,7 @@ class GaugeNet(nn.Module):
         
         # Example: Use residual blocks with increasing channels.
         self.layer1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             ResidualSEBlock(64, 64),
@@ -109,10 +129,13 @@ class GaugeNet(nn.Module):
         # Global average pooling to get a (B, 512, 1, 1) feature map
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         
+        self.attention_fusion = AttentionFusion(img_dim=512, bbox_dim=4, proj_dim=512)
+
+
         # Enhanced Regressor: combine CNN features (512) with bbox (4) to get a gauge reading.
         self.regressor = nn.Sequential(
             nn.Flatten(),  # flatten to shape (B, 512)
-            nn.Linear(512 + 4, 512),
+            nn.Linear(512, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(0.5),
@@ -146,12 +169,10 @@ class GaugeNet(nn.Module):
         
         # Global pooling and flattening
         x = self.avgpool(x)
-        features = x.view(x.size(0), -1)  # Shape: (B, 512)
-        
+        img_features = x.view(x.size(0), -1)  # Shape: (B, 512)
+        fused_features = self.attention_fusion(img_features, bbox)
         # Concatenate features with the bounding box (B, 4) -> (B, 516)
-        combined = torch.cat([features, bbox], dim=1)
-        
-        output = self.regressor(combined)
+        output = self.regressor(fused_features)
         return output
 
 # -----------------------------
@@ -163,16 +184,14 @@ def main(args):
     
     # 3. Define Data Transformations
     transform = transforms.Compose([
-        transforms.Resize((512, 512)),
-        transforms.ToTensor(),
-        # Uncomment to add normalization:
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
+            transforms.Grayscale(num_output_channels=1),  # Converts to grayscale
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5])
     ])
-
+    
     # 4. Create Dataset and Split into Train/Test
     # Note: Ensure your GaugeDataset now returns (image, needle_bbox, target)
-    dataset = GaugeDataset(image_dir=args.image_dir, json_file=args.json_file, transform=transform, box_only=args.box_only)
+    dataset = GaugeDataset(image_dir=args.image_dir, json_file=args.json_file, transform=transform, box_only=args.box_only, x_size=512, y_size=512)
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
