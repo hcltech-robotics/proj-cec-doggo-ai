@@ -38,3 +38,11 @@ ros2 run gauge_net gauge_reader --ros-args -p model_file:=../checkpoints/gauge_n
 
 The gauge reader sends `gauge_net_msgs/msg/GaugeReading` messages to the `/gauge_reading` topic.
 
+## Running Both Nodes with a Launch File  
+
+To start both the gauge detector and gauge reader nodes using a single launch file, use:  
+```bash
+ros2 launch gauge_net gauge_net.launch.py \
+    gauge_detector_weights:=/path/to/gauge_detect2.pt \
+    gauge_reader_weights:=/path/to/gauge_net_with_needle_boxed.pt
+```

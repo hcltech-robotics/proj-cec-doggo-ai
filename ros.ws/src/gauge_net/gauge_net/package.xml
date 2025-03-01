@@ -13,6 +13,7 @@
   <test_depend>python3-pytest</test_depend>
 
   <depend>vision_msgs</depend>
+  <exec_depend>gauge_net_interface</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
