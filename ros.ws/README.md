@@ -22,7 +22,7 @@ The gauge detector endpoint receives an image from the `image` topic and runs a 
 
 Run the following command to launch the gauge detector:
 ```
-ros2 run gauge_net gauge_detector --ros-args -p model_file:=../checkpoints/gauge_detect2.pt
+ros2 run gauge_net gauge_detector --ros-args -p model_file:=../checkpoints/gauge_detect.pt
 ```
 
 The gauge detector sends bounding boxes as a `vision_msgs/msg/Detection2DArray` to the `/detections` topic and detected gauges (image cutouts) to the `/gauge_image` topic.
@@ -33,7 +33,7 @@ The gauge reader receives images on the `/image` topic and matching bounding box
 
 Run the following command to launch the gauge reader:
 ```
-ros2 run gauge_net gauge_reader --ros-args -p model_file:=../checkpoints/gauge_net_with_needle_boxed.pt
+ros2 run gauge_net gauge_reader --ros-args -p model_file:=../checkpoints/gauge_net_boxed_grayscale.pt
 ```
 
 The gauge reader sends `gauge_net_msgs/msg/GaugeReading` messages to the `/gauge_reading` topic.
@@ -43,6 +43,6 @@ The gauge reader sends `gauge_net_msgs/msg/GaugeReading` messages to the `/gauge
 To start both the gauge detector and gauge reader nodes using a single launch file, use:  
 ```bash
 ros2 launch gauge_net gauge_net.launch.py \
-    gauge_detector_weights:=/path/to/gauge_detect2.pt \
-    gauge_reader_weights:=/path/to/gauge_net_with_needle_boxed.pt
+    gauge_detector_weights:=/path/to/gauge_detect.pt \
+    gauge_reader_weights:=/path/to/gauge_net_boxed_grayscale.pt
 ```
