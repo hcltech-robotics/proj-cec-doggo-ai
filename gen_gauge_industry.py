@@ -11,19 +11,21 @@ import random
 
 rep.set_global_seed(random.randint(0, 1000000))
 
-ENV_PATH='omniverse://localhost/Library/Office_with_gauge.usda'
+ENV_PATH='omniverse://localhost/Library/jetty_with_gauge.usdc'
 GAUGE_PATH="/Replicator/Ref_Xform/Ref/Pressure_Gauge_2/Pressure_Gauge/Pressure_Gauge_uw_obj"
 GAUGE_NEEDLE_PATH=f"/Replicator/Ref_Xform/Ref/Pressure_Gauge_2/Pressure_Gauge/Pressure_Gauge_uw_obj/Metal/Hand"
+LIGHT_PATH =f"/Replicator/Ref_Xform/Ref/Environment/sky/DomeLight"
+ROTATION_MIN = -134
+ROTATION_MAX = 137
 CAMERA_PATH="/Replicator/Ref_Xform/Ref/RepCamera"
 
 NOW=datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-OUTPUT_DIR = os.path.expanduser("~/data/gauge_data_basic_"+NOW)
+OUTPUT_DIR = os.path.expanduser("~/data/gauge_data_industry_"+NOW)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-def normalize_rotation(rotation):
-    rotation = -rotation
-    return (rotation - (-131)) / 270 * 1.0
+def normalize_rotation(rotation, min, max):
+    return 1 - (rotation - min) / (max - min)
 
 def get_current_stage() -> Usd.Stage:
     return usd.get_context().get_stage()
@@ -47,6 +49,7 @@ with rep.new_layer() as layer:
     ground = rep.create.from_usd(ENV_PATH)
     gauge = rep.get.prim_at_path(GAUGE_PATH)
     camera =  rep.get.camera(CAMERA_PATH)
+    light = rep.get.light(LIGHT_PATH)
     camera_prim = get_prim_by_path(stage, CAMERA_PATH)
     gauge_prim = get_prim_by_path(stage, GAUGE_PATH)
     gauge_location = get_attribute_value(gauge_prim, "xformOp:translate")
@@ -56,7 +59,7 @@ with rep.new_layer() as layer:
     # with camera:
     #     rep.modify.pose(look_at = gauge_location)
 
-    render_product = rep.create.render_product(camera, resolution=(1024, 768))
+    render_product = rep.create.render_product(camera, resolution=(1920, 1080))
     
     with gauge:
       rep.modify.semantics([('class', "gauge")])
@@ -68,16 +71,18 @@ with rep.new_layer() as layer:
     rep.randomizer.register(uniform_random_rotation)
     with rep.trigger.on_frame():
 
-        uniform_random_rotation(hand, min_z = -131, max_z = 139)
+        uniform_random_rotation(hand, min_z = ROTATION_MIN, max_z = ROTATION_MAX)
         with gauge:
-            rep.modify.pose(rotation = rep.distribution.uniform((0, -60, 0), (0, 20, 0)))
+            rep.modify.pose(rotation = rep.distribution.uniform((0, -60, 0), (0, 60, 0)))
 
         with camera:
-             rep.modify.pose(position=rep.distribution.uniform((camera_location[0]-9, camera_location[1]-9, camera_location[2]-9)
-                                                             , (camera_location[0]+9, camera_location[1]+9, camera_location[2]+9))
-                        #    , look_at=gauge
-                           , look_at_up_axis = (0, 1, 0)
-                                                             )
+             rep.modify.pose(position=rep.distribution.uniform((camera_location[0]-0.4, camera_location[1]-0.2, camera_location[2]-0.2)
+                                                             , (camera_location[0]+0.1, camera_location[1]+0.2, camera_location[2]+0.2)))
+        with light:
+            rep.modify.attribute("intensity", rep.distribution.uniform(0.0, 1.2))
+            rep.modify.attribute("exposure", rep.distribution.uniform(0.0, 1.5))
+            rep.modify.attribute("color", rep.distribution.uniform((0.6, 0.6, 0.6), (1.0, 1.0, 1.0)))
+            rep.modify.pose(rotation = rep.distribution.uniform((0, 0, 0), (360, 360, 360)))
         
     
     
@@ -91,14 +96,14 @@ async def run():
     rotations = []
     rotations_filename = "rotations.json"
     stage = get_current_stage()
-    for i in range(0,50):
+    for i in range(0, 10):
         # This renders one new frame (the subframes are needed for high quality raytracing)
-        await rep.orchestrator.step_async(rt_subframes=13)
+        await rep.orchestrator.step_async(rt_subframes=15)
         
         # Access a prim when the simulation is not running and read it's rotation.
         prim = get_prim_by_path(stage, GAUGE_NEEDLE_PATH)
         rotation = get_attribute_value(prim, "xformOp:rotateXYZ")
-        rotation_norm = normalize_rotation(rotation[2])
+        rotation_norm = normalize_rotation(rotation[2], ROTATION_MIN, ROTATION_MAX)
         rotations.append({"frame" : i, "rotation" : rotation_norm})
         print(f"Step {i}, rotation: {rotation} rotation_norm: {rotation_norm}")
 
