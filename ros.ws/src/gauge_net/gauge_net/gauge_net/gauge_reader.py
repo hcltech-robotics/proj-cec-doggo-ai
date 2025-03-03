@@ -15,7 +15,7 @@ class GaugeReader(Node):
 
     def __init__(self):
         super().__init__('gauge_reader')
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_input_size = (512, 512)
 
         # Declare parameters.
@@ -33,13 +33,15 @@ class GaugeReader(Node):
         self.model.eval()
 
         # Define image processing pipeline.
-        self.transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize(self.model_input_size),
-            transforms.Grayscale(num_output_channels=1),  # Converts to grayscale
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5])
-        ])
+        self.transform = transforms.Compose(
+            [
+                transforms.ToPILImage(),
+                transforms.Resize(self.model_input_size),
+                transforms.Grayscale(num_output_channels=1),  # Converts to grayscale
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5], std=[0.5]),
+            ]
+        )
 
         # Publisher for the gauge reading.
         self.reading_pub = self.create_publisher(GaugeReading, 'gauge_reading', 10)
@@ -116,7 +118,7 @@ class GaugeReader(Node):
 
         # Crop the gauge from the image.
         gauge_crop = cv_image[g_y_min:g_y_max, g_x_min:g_x_max]
-        
+
         # Extract needle bounding box.
         n_box = needle_det.bbox
         n_center_x = n_box.center.position.x
@@ -153,7 +155,9 @@ class GaugeReader(Node):
         norm_n_x_max *= self.model_input_size[0] / gauge_width
         norm_n_y_max *= self.model_input_size[1] / gauge_height
 
-        bbox_tensor = torch.tensor([norm_n_x_min, norm_n_y_min, norm_n_x_max, norm_n_y_max], dtype=torch.float32).unsqueeze(0)
+        bbox_tensor = torch.tensor(
+            [norm_n_x_min, norm_n_y_min, norm_n_x_max, norm_n_y_max], dtype=torch.float32
+        ).unsqueeze(0)
         # Transform the gauge crop to a tensor (model expects 512x512 input).
         gauge_crop_tensor = self.transform(gauge_crop).unsqueeze(0).to(self.device)
 
