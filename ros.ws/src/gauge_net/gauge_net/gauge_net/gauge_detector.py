@@ -5,6 +5,12 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 import torch
 import torchvision.transforms as transforms
+from vision_msgs.msg import (
+    Detection2D,
+    Detection2DArray,
+    ObjectHypothesis,
+    ObjectHypothesisWithPose,
+)
 
 
 class GaugeDetector(Node):
@@ -15,7 +21,11 @@ class GaugeDetector(Node):
 
         # Declare and get model file parameter
         self.declare_parameter('model_file', '')
+        self.declare_parameter('min_gauge_score', 0.99)
         model_path = self.get_parameter('model_file').get_parameter_value().string_value
+        self.min_gauge_score = (
+            self.get_parameter('min_gauge_score').get_parameter_value().double_value
+        )
 
         # Load ResNet model
         self.model = torch.jit.load(model_path, map_location=self.device)
@@ -30,9 +40,12 @@ class GaugeDetector(Node):
             ]
         )
 
-        # ROS2 Image subscriber and publisher
+        # Subscribers and Publishers:
+        # - Subscribing to the incoming image.
+        # - Publishing the gauge image (as is) and the Detection2DArray message.
         self.image_sub = self.create_subscription(Image, 'image', self.image_callback, 10)
-        self.image_pub = self.create_publisher(Image, 'processed_image', 10)
+        self.gauge_pub = self.create_publisher(Image, 'gauge_image', 10)
+        self.detections_pub = self.create_publisher(Detection2DArray, 'detections', 10)
 
         # ROS2 Service to define how many images are processed
         self.process_mode_ = GaugeProcess.Request.MODE_DO_NOTHING
@@ -74,45 +87,57 @@ class GaugeDetector(Node):
         elif self.process_mode_ == GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE:
             self.process_mode_ = GaugeProcess.Request.MODE_DO_NOTHING
 
-        # Convert ROS2 image to OpenCV format
+        # Process the image for detection
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
-
-        # Convert image to tensor
-        image_tensor = self.transform(cv_image)  # Add batch dimension
+        image_tensor = self.transform(cv_image)
         image_tensor = image_tensor.to(self.device)
-        # Run inference
+
         with torch.no_grad():
             detections = self.model([image_tensor])
 
-        # Assume label 1 is our target class (modify as needed)
-        detections = self.parse_detections(detections)
-
-        for detection in detections:  # we usually get 2
-            self.get_logger().info(f'Detected bounding box: {detection}')
-
-            # Crop the first detected region
-            x_min, y_min, x_max, y_max = detection
-            cropped_image = cv_image[y_min:y_max, x_min:x_max]
-
-            # Convert back to ROS Image and publish
-            processed_msg = self.bridge.cv2_to_imgmsg(cropped_image, encoding='rgb8')
-            self.image_pub.publish(processed_msg)
-
-    def parse_detections(self, detections):
-        """Parse outputs and extract bounding boxes for label 1."""
-        coordinates = []
+        # (2) Create a Detection2DArray message for bounding boxes.
+        detections_msg = Detection2DArray()
+        # Use the same header (and timestamp) as the incoming image so that
+        # a receiver can perform exact time synchronization.
+        detections_msg.header = msg.header
         for (detection, label_idx), score in zip(
             zip(detections[1][0]['boxes'].cpu(), detections[1][0]['labels'].cpu()),
             detections[1][0]['scores'].cpu(),
         ):
-            if label_idx.item() != 1:
-                continue
+
             box = detection.numpy().astype(int)
             x_min, y_min, x_max, y_max = (box[0], box[1], box[2], box[3])
 
-            if score > 0.75:
-                coordinates.append((x_min, y_min, x_max, y_max))
-        return coordinates
+            if label_idx.item() == 1:
+                self.process_gauge_detection(x_min, y_min, x_max, y_max, score, msg, cv_image)
+
+            detection = Detection2D()
+            detection.header = msg.header
+
+            # Compute the center and size of the bounding box.
+            center_x = (x_min + x_max) / 2.0
+            center_y = (y_min + y_max) / 2.0
+            detection.bbox.center.position.x = float(center_x)
+            detection.bbox.center.position.y = float(center_y)
+            detection.bbox.size_x = float(x_max - x_min)
+            detection.bbox.size_y = float(y_max - y_min)
+            object_hypothesis = ObjectHypothesis(
+                class_id=str(label_idx.item()), score=score.item()
+            )
+            object_hypothesis_with_pose = ObjectHypothesisWithPose(hypothesis=object_hypothesis)
+            detection.results.append(object_hypothesis_with_pose)
+            detections_msg.detections.append(detection)
+            self.get_logger().info(f'Detected bounding box: {box}')
+
+        # Publish the Detection2DArray message
+        self.detections_pub.publish(detections_msg)
+
+    def process_gauge_detection(self, x_min, y_min, x_max, y_max, score, msg, cv_image):
+        if score > self.min_gauge_score:
+            cropped_image = cv_image[y_min:y_max, x_min:x_max]
+            gauge_msg = self.bridge.cv2_to_imgmsg(cropped_image, encoding='rgb8')
+            gauge_msg.header = msg.header  # Maintain the original header for synchronization
+            self.gauge_pub.publish(gauge_msg)
 
 
 def main(args=None):
