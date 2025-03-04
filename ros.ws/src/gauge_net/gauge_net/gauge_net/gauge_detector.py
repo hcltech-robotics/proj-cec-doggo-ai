@@ -1,4 +1,5 @@
 from cv_bridge import CvBridge
+from gauge_net import qos_settings
 from gauge_net_interface.srv import GaugeProcess
 import rclpy
 from rclpy.node import Node
@@ -43,9 +44,19 @@ class GaugeDetector(Node):
         # Subscribers and Publishers:
         # - Subscribing to the incoming image.
         # - Publishing the gauge image (as is) and the Detection2DArray message.
-        self.image_sub = self.create_subscription(Image, 'image', self.image_callback, 10)
-        self.gauge_pub = self.create_publisher(Image, 'gauge_image', 10)
-        self.detections_pub = self.create_publisher(Detection2DArray, 'detections', 10)
+        self.image_sub = self.create_subscription(
+            Image,
+            'image',
+            self.image_callback,
+            1,
+            qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE,
+        )
+        self.gauge_pub = self.create_publisher(
+            Image, 'gauge_image', 10, qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE
+        )
+        self.detections_pub = self.create_publisher(
+            Detection2DArray, 'detections', qos_profile=qos_settings.GAUGE_QOS_PROFILE
+        )
 
         # ROS2 Service to define how many images are processed
         self.process_mode_ = GaugeProcess.Request.MODE_DO_NOTHING

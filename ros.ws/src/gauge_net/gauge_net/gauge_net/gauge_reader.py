@@ -1,4 +1,5 @@
 from cv_bridge import CvBridge
+from gauge_net import qos_settings
 from gauge_net_interface.msg import GaugeReading
 
 # Import message_filters for synchronization.
@@ -44,14 +45,23 @@ class GaugeReader(Node):
         )
 
         # Publisher for the gauge reading.
-        self.reading_pub = self.create_publisher(GaugeReading, 'gauge_reading', 10)
+        self.reading_pub = self.create_publisher(
+            GaugeReading,
+            'gauge_reading',
+            10,
+            qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE,
+        )
 
         # cv_bridge for image conversion.
         self.bridge = CvBridge()
 
         # Create message_filters subscribers for gauge_image and detections.
-        self.gauge_sub = Subscriber(self, Image, 'image')
-        self.detections_sub = Subscriber(self, Detection2DArray, 'detections')
+        self.gauge_sub = Subscriber(
+            self, Image, 'image', qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE
+        )
+        self.detections_sub = Subscriber(
+            self, Detection2DArray, 'detections', qos_profile=qos_settings.GAUGE_QOS_PROFILE
+        )
 
         # Use a TimeSynchronizer to match messages based on their header timestamps.
         self.ts = TimeSynchronizer([self.gauge_sub, self.detections_sub], 10)
@@ -171,6 +181,7 @@ class GaugeReader(Node):
 
         # Populate and publish the gauge reading message.
         gauge_reading = GaugeReading()
+        gauge_reading.header = image_msg.header
         gauge_reading.reading = reading
         gauge_reading.scaled_reading = scaled_reading
         self.get_logger().info(
