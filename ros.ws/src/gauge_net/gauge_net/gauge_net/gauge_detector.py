@@ -1,8 +1,8 @@
 from cv_bridge import CvBridge
-from gauge_net import qos_settings
 from gauge_net_interface.srv import GaugeProcess
 import rclpy
 from rclpy.node import Node
+from rclpy.qos_overriding_options import QoSOverridingOptions
 from sensor_msgs.msg import Image
 import torch
 import torchvision.transforms as transforms
@@ -49,13 +49,19 @@ class GaugeDetector(Node):
             'image',
             self.image_callback,
             1,
-            qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE,
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
         self.gauge_pub = self.create_publisher(
-            Image, 'gauge_image', 10, qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE
+            Image,
+            'gauge_image',
+            10,
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
         self.detections_pub = self.create_publisher(
-            Detection2DArray, 'detections', qos_profile=qos_settings.GAUGE_QOS_PROFILE
+            Detection2DArray,
+            'detections',
+            10,
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         # ROS2 Service to define how many images are processed

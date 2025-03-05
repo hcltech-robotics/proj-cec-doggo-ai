@@ -1,11 +1,11 @@
 from cv_bridge import CvBridge
-from gauge_net import qos_settings
 from gauge_net_interface.msg import GaugeReading
 
 # Import message_filters for synchronization.
 from message_filters import Subscriber, TimeSynchronizer
 import rclpy
 from rclpy.node import Node
+from rclpy.qos_overriding_options import QoSOverridingOptions
 from sensor_msgs.msg import Image
 import torch
 import torchvision.transforms as transforms
@@ -49,7 +49,7 @@ class GaugeReader(Node):
             GaugeReading,
             'gauge_reading',
             10,
-            qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE,
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         # cv_bridge for image conversion.
@@ -57,10 +57,16 @@ class GaugeReader(Node):
 
         # Create message_filters subscribers for gauge_image and detections.
         self.gauge_sub = Subscriber(
-            self, Image, 'image', qos_overriding_options=qos_settings.GAUGE_QOS_OVERRIDE
+            self,
+            Image,
+            'image',
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
         self.detections_sub = Subscriber(
-            self, Detection2DArray, 'detections', qos_profile=qos_settings.GAUGE_QOS_PROFILE
+            self,
+            Detection2DArray,
+            'detections',
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         # Use a TimeSynchronizer to match messages based on their header timestamps.
