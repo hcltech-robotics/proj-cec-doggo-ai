@@ -72,17 +72,17 @@ class AprilTagController(Node):
         super().__init__('apriltag_controller')
 
         # Parameters
-        self.declare_parameter('target_tag_id', 0)
+        self.declare_parameter('target_tag_id', 1)
         self.declare_parameter('desired_distance', 0.5)  # meters
         # radians (0 = directly facing tag)
         self.declare_parameter('desired_yaw', 0.0)
-        self.declare_parameter('position_threshold', 0.05)  # meters
-        self.declare_parameter('angle_threshold', 0.05)  # radians
+        self.declare_parameter('position_threshold', 0.25)  # meters
+        self.declare_parameter('angle_threshold', 0.25)  # radians
 
         # Modified PID controllers for lower framerate (6 fps)
         # Increased P for quicker response with fewer updates
         # Decreased D since we have less frequent measurements
-        self.linear_pid = PIDController(kp=0.6, ki=0.1, kd=0.1, max_output=0.3)
+        self.linear_pid = PIDController(kp=0.6, ki=0.1, kd=0.1, max_output=0.2)
         self.angular_pid = PIDController(
             kp=1.2, ki=0.1, kd=0.15, max_output=1.0)
 
@@ -99,7 +99,7 @@ class AprilTagController(Node):
         # Subscribe to AprilTag detections from Isaac ROS
         self.tag_sub = self.create_subscription(
             AprilTagDetectionArray,
-            '/apriltag/detections',
+            '/apriltag/tag_detections',
             self.tag_callback,
             tag_qos
         )
@@ -137,13 +137,13 @@ class AprilTagController(Node):
                 # Get tag pose in camera frame
                 tag_pose = detection.pose
                 self.tag_position = np.array([
-                    tag_pose.position.x,
-                    tag_pose.position.y,
-                    tag_pose.position.z
+                    tag_pose.pose.pose.position.x,
+                    tag_pose.pose.pose.position.y,
+                    tag_pose.pose.pose.position.z
                 ])
 
                 # Convert quaternion to yaw angle (around Z axis)
-                q = tag_pose.orientation
+                q = tag_pose.pose.pose.orientation
                 self.tag_orientation = math.atan2(
                     2.0 * (q.w * q.z + q.x * q.y),
                     1.0 - 2.0 * (q.y * q.y + q.z * q.z)
@@ -151,7 +151,7 @@ class AprilTagController(Node):
 
                 msg = f'Tag detected at position: {self.tag_position}, '
                 msg += f'orientation: {self.tag_orientation}'
-                self.get_logger().debug(msg)
+                self.get_logger().info(msg)
 
                 # Reset locked state when we get a new detection
                 self.position_locked = False
@@ -174,7 +174,7 @@ class AprilTagController(Node):
 
             # Angle to tag (positive means tag is to the left)
             angle_to_tag = math.atan2(
-                self.tag_position[1], self.tag_position[0])
+                self.tag_position[0], self.tag_position[2])
 
             # Check if we've reached the target position (for drift correction)
             if (abs(distance_error) < self.position_threshold and
@@ -194,7 +194,7 @@ class AprilTagController(Node):
             # Position not locked yet, continue with PID control
             # Compute PID control outputs with longer dt due to lower framerate
             linear_vel = self.linear_pid.compute(distance_error, 1.0 / 6.0)
-            angular_vel = self.angular_pid.compute(angle_to_tag, 1.0 / 6.0)
+            angular_vel = -self.angular_pid.compute(angle_to_tag, 1.0 / 6.0)
 
             # Create and publish velocity command
             cmd = Twist()
@@ -204,7 +204,7 @@ class AprilTagController(Node):
 
             debug_msg = f'Distance: {distance:.2f}m, Angle: {angle_to_tag:.2f}rad, '
             debug_msg += f'Commands: linear={linear_vel:.2f}, angular={angular_vel:.2f}'
-            self.get_logger().debug(debug_msg)
+            self.get_logger().info(debug_msg)
         else:
             # If we haven't seen the tag recently, stop or search
             self.tag_detected = False
@@ -213,10 +213,12 @@ class AprilTagController(Node):
             # Simple search behavior: rotate slowly to find the tag
             cmd = Twist()
             cmd.linear.x = 0.0
-            cmd.angular.z = 0.3  # Rotate slowly to search for tag
+            # cmd.angular.z = 0.3  # Rotate slowly to search for tag
+            cmd.angular.z = 0.0
             self.cmd_vel_pub.publish(cmd)
 
-            self.get_logger().debug('No tag detected, searching...')
+            self.get_logger().info(
+                f'No tag detected searching... td={self.tag_detected} tsd={time_since_detection:.2f}s')
 
 
 def main(args=None):
