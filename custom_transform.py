@@ -2,12 +2,49 @@ import numpy as np
 import cv2
 from PIL import Image, ImageOps
 
+class Noise:
+    def __init__(self, poisson_noise=True, blur_kernel=(4,4)):
+        self.poisson_noise = poisson_noise
+        self.blur_kernel = blur_kernel
+
+    def add_poisson_noise(self, image):
+        vals = len(np.unique(image))
+        vals = 2 ** np.ceil(np.log2(vals))  # Adjust to power of 2
+        noisy = np.random.poisson(image * vals) / float(vals)
+        noisy_image = np.clip(noisy, 0, 255).astype(np.uint8)
+        return noisy_image
+
+    def __call__(self, sample):
+        img = sample['image']
+        opencv_image = np.array(img)
+        
+         # Blur
+        if self.blur_kernel:
+            opencv_image = cv2.GaussianBlur(opencv_image, self.blur_kernel, 0)
+        # Noise
+        if self.poisson_noise:
+            opencv_image = self.add_poisson_noise(opencv_image)
+
+        img = Image.fromarray(opencv_image)
+        result = sample.copy()
+        result['image'] = img
+
+        return result
 
 class CLAHEPreprocess:
-    def __init__(self, clip_limit=5.0, tile_grid_size=(10, 10), min_area=15000):
+    def __init__(self, clip_limit=5.0, tile_grid_size=(10, 10), min_area=15000, poisson_noise=False, blur_kernel=None):
         self.clip_limit = clip_limit
         self.tile_grid_size = tile_grid_size
         self.min_area = min_area
+        self.blur_kernel = blur_kernel
+        self.poisson_noise = poisson_noise
+
+    def add_poisson_noise(self, image):
+        vals = len(np.unique(image))
+        vals = 2 ** np.ceil(np.log2(vals))  # Adjust to power of 2
+        noisy = np.random.poisson(image * vals) / float(vals)
+        noisy_image = np.clip(noisy, 0, 255).astype(np.uint8)
+        return noisy_image
 
     def __call__(self, sample):
         img = sample['image']
@@ -15,6 +52,14 @@ class CLAHEPreprocess:
 
         # Convert PIL to OpenCV (NumPy array)
         opencv_image = np.array(img)
+
+
+        # Blur
+        if self.blur_kernel:
+            opencv_image = cv2.GaussianBlur(opencv_image, self.blur_kernel, 0)
+        # Noise
+        if self.poisson_noise:
+            opencv_image = self.add_poisson_noise(opencv_image)
 
         # Convert image to grayscale (handling RGB/RGBA cases)
         if opencv_image.shape[-1] == 4:

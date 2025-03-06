@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision.transforms as transforms
 import numpy as np
 from gauge_dataset import GaugeDataset
-from custom_transform import CLAHEPreprocess, ResizeWithPaddingAndBBox
+from custom_transform import CLAHEPreprocess, Noise, ResizeWithPaddingAndBBox
 
 import torch
 import torch.nn as nn
@@ -182,10 +182,11 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    noise = Noise()
     clahe_transform = CLAHEPreprocess()
     resize_with_padding_transform = ResizeWithPaddingAndBBox()
     # 3. Define Data Transformations
-    transform = transforms.Compose([clahe_transform, resize_with_padding_transform])
+    transform = transforms.Compose([noise, clahe_transform, resize_with_padding_transform])
 
     # 4. Create Dataset and Split into Train/Test
     # Note: Ensure your GaugeDataset now returns (image, needle_bbox, target)

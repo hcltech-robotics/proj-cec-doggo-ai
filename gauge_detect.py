@@ -9,6 +9,8 @@ from torchvision import transforms
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor, FasterRCNN_ResNet50_FPN_V2_Weights
 from torch.utils.data import DataLoader, Dataset
 
+from custom_transform import Noise
+
 # ----------------------------
 # Custom Dataset for Gauges
 # ----------------------------
@@ -130,6 +132,9 @@ def get_model(num_classes, model_path = None, finetune=False, device=torch.devic
 
     return model
 
+
+
+
 # ----------------------------
 # Transforms Definition
 # ----------------------------
@@ -140,8 +145,11 @@ def get_transform(train):
       - Converts the PIL image to a tensor,
       - Normalizes the image using ImageNet means and stds.
     """
+    noise = Noise()
+
     return transforms.Compose([
         #transforms.Resize((512, 512)),
+        noise,
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225])
