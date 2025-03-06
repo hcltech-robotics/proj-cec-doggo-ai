@@ -9,6 +9,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformBroadcaster, TransformListener
 from visualization_msgs.msg import Marker
 
@@ -128,6 +129,10 @@ class AprilTagController(Node):
             10
         )
 
+        # Create service f
+        self.srv = self.create_service(Trigger, 'apriltag_controller/trigger', self.start_control)
+        self.navigate = False
+
         # TF infrastructure
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -172,6 +177,13 @@ class AprilTagController(Node):
 
         self.get_logger().info(
             'Improved AprilTag Controller initialized with y-axis control and odometry tracking')
+
+    def start_control(self, request, response):
+        """Start the navigation control loop."""
+        self.navigate = True
+        response.success = True
+        response.message = 'Navigation control loop started'
+        return response
 
     def check_tf_tree_and_cancel_timer(self):
         """Check TF tree and then cancel the timer to make it a one-shot."""
@@ -253,6 +265,10 @@ class AprilTagController(Node):
 
     def odom_callback(self, msg):
         """Process odometry data."""
+
+        if not self.navigate:
+            return
+
         self.last_odom_pose = msg.pose.pose
 
         # If we have a tag detected and stored in odom frame, update the TF
@@ -353,6 +369,10 @@ class AprilTagController(Node):
 
     def tag_callback(self, msg):
         """Process AprilTag detections."""
+
+        if not self.navigate:
+            return
+
         for detection in msg.detections:
             # Check if this is our target tag
             if detection.id == self.target_tag_id:
@@ -643,6 +663,10 @@ class AprilTagController(Node):
 
     def control_loop(self):
         """Loop main control loop for navigating toward the tag."""
+
+        if not self.navigate:
+            return
+
         # Check if we've seen the tag recently
         now = self.get_clock().now()
         time_since_detection = (
@@ -687,6 +711,9 @@ class AprilTagController(Node):
                 cmd.linear.y = 0.0
                 cmd.angular.z = 0.0
                 self.cmd_vel_pub.publish(cmd)
+
+                self.navigate = False
+                self.get_logger().info('Target position reached!')
                 return
 
             # Position not locked yet, continue with PID control for 3-DOF
