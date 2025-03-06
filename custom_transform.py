@@ -3,7 +3,7 @@ import cv2
 from PIL import Image, ImageOps
 
 class Noise:
-    def __init__(self, poisson_noise=True, blur_kernel=(4,4)):
+    def __init__(self, poisson_noise=True, blur_kernel=(5,5)):
         self.poisson_noise = poisson_noise
         self.blur_kernel = blur_kernel
 
@@ -15,7 +15,11 @@ class Noise:
         return noisy_image
 
     def __call__(self, sample):
-        img = sample['image']
+        if isinstance(sample, dict):
+            img = sample['image']
+        elif isinstance(sample, Image.Image):
+            img = sample
+
         opencv_image = np.array(img)
         
          # Blur
@@ -26,8 +30,12 @@ class Noise:
             opencv_image = self.add_poisson_noise(opencv_image)
 
         img = Image.fromarray(opencv_image)
-        result = sample.copy()
-        result['image'] = img
+
+        if isinstance(sample, dict):
+            result = sample.copy()
+            result['image'] = img
+        elif isinstance(sample, Image.Image):
+            result = img
 
         return result
 
