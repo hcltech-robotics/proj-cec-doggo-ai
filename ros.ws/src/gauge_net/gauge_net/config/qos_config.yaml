@@ -1,0 +1,36 @@
+/gauge_detector:
+  ros__parameters:
+    qos_overrides:
+      /detections:
+        publisher:
+          reliability: reliable
+          history: keep_last
+          depth: 5
+      /gauge_image:
+        publisher:
+          reliability: best_effort
+          history: keep_last
+          depth: 1
+      /image:
+        subscription:
+          reliability: best_effort
+          history: keep_last
+          depth: 1
+/gauge_reader:
+  ros__parameters:
+    qos_overrides:
+      /gauge_reading:
+        publisher:
+          reliability: reliable
+          history: keep_last
+          depth: 5
+      /detections:
+        subscription:
+          reliability: reliable
+          history: keep_last
+          depth: 5
+      /image:
+        subscription:
+          reliability: best_effort
+          history: keep_last
+          depth: 1

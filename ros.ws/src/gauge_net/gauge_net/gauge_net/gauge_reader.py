@@ -7,10 +7,12 @@ from gauge_net_interface.msg import GaugeReading
 from message_filters import Subscriber, TimeSynchronizer
 import rclpy
 from rclpy.node import Node
+from rclpy.qos_overriding_options import QoSOverridingOptions
 from sensor_msgs.msg import Image
 import torch
 import torchvision.transforms as transforms
 from vision_msgs.msg import Detection2DArray
+import cv2
 
 
 class GaugeReader(Node):
@@ -40,14 +42,31 @@ class GaugeReader(Node):
         )
 
         # Publisher for the gauge reading.
-        self.reading_pub = self.create_publisher(GaugeReading, 'gauge_reading', 10)
+        self.reading_pub = self.create_publisher(
+            GaugeReading,
+            'gauge_reading',
+            10,
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+        )
+
+        self.proc_pub = self.create_publisher(Image, 'processed_image', 10)
 
         # cv_bridge for image conversion.
         self.bridge = CvBridge()
 
         # Create message_filters subscribers for gauge_image and detections.
-        self.gauge_sub = Subscriber(self, Image, 'image')
-        self.detections_sub = Subscriber(self, Detection2DArray, 'detections')
+        self.gauge_sub = Subscriber(
+            self,
+            Image,
+            'image',
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+        )
+        self.detections_sub = Subscriber(
+            self,
+            Detection2DArray,
+            'detections',
+            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+        )
 
         # Use a TimeSynchronizer to match messages based on their header timestamps.
         self.ts = TimeSynchronizer([self.gauge_sub, self.detections_sub], 10)
@@ -145,11 +164,6 @@ class GaugeReader(Node):
         norm_n_x_max = (n_x_max - g_x_min) / gauge_width
         norm_n_y_max = (n_y_max - g_y_min) / gauge_height
 
-        norm_n_x_min *= self.model_input_size[0] / gauge_width
-        norm_n_y_min *= self.model_input_size[1] / gauge_height
-        norm_n_x_max *= self.model_input_size[0] / gauge_width
-        norm_n_y_max *= self.model_input_size[1] / gauge_height
-
         bbox_n = [norm_n_x_min, norm_n_y_min, norm_n_x_max, norm_n_y_max]
         # Transform the gauge crop to a tensor (model expects 512x512 input).
         sample = {'image': gauge_crop, 'bbox': bbox_n}
@@ -158,6 +172,31 @@ class GaugeReader(Node):
             transforms.ToTensor()(transformed['image']).unsqueeze(0).to(self.device)
         )
         bbox_tensor = torch.tensor(transformed['bbox'], dtype=torch.float32).unsqueeze(0)
+
+        img = transforms.ToTensor()(transformed['image']).numpy()
+
+        import numpy as np
+
+        # Ensure proper image format
+        img = np.transpose(img, (1, 2, 0))  # Convert from (C, H, W) to (H, W, C)
+
+        # Rescale image and ensure uint8 format
+        img = (img * 255).astype(np.uint8)
+
+        print("Image shape:", img.shape)
+        bbox = transformed['bbox']
+
+        # Scale the bounding box back to the image dimensions
+        height, width, _ = img.shape
+        bbox[0] = int(bbox[0] * width)
+        bbox[1] = int(bbox[1] * height)
+        bbox[2] = int(bbox[2] * width)
+        bbox[3] = int(bbox[3] * height)
+
+        cv2.rectangle(img, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color=(0, 0, 0), thickness=2)
+
+        # Publish the processed image.
+        self.proc_pub.publish(self.bridge.cv2_to_imgmsg(img, encoding='mono8'))
 
         # Run inference: the model expects the gauge crop and the normalized bbox.
         with torch.no_grad():
@@ -169,6 +208,7 @@ class GaugeReader(Node):
 
         # Populate and publish the gauge reading message.
         gauge_reading = GaugeReading()
+        gauge_reading.header = image_msg.header
         gauge_reading.reading = reading
         gauge_reading.scaled_reading = scaled_reading
         self.get_logger().info(

@@ -46,3 +46,12 @@ ros2 launch gauge_net gauge_net.launch.py \
     gauge_detector_weights:=/path/to/gauge_detect.pt \
     gauge_reader_weights:=/path/to/gauge_net_boxed_grayscale.pt
 ```
+
+## Setting Image Process Mode
+
+To call the `set_image_process_mode` service, use the following command:
+```
+ros2 service call /set_image_process_mode gauge_net_interface/srv/GaugeProcess "{process_mode: 0}"
+```
+The values for `process_mode` can be found in the [GaugeProcess.srv](https://github.com/hcltech-robotics/proj-cec-doggo-ai/blob/main/ros.ws/src/gauge_net/gauge_net_interface/srv/GaugeProcess.srv) file.
+
