@@ -1,18 +1,44 @@
 import numpy as np
 import cv2
 from PIL import Image, ImageOps
+import numpy as np
+import cv2
+from PIL import Image
+import random
 
 class Noise:
-    def __init__(self, poisson_noise=True, blur_kernel=(5,5)):
-        self.poisson_noise = poisson_noise
-        self.blur_kernel = blur_kernel
+    def __init__(self, poisson_intensity_range=(0.7, 2.0), blur_kernel_range=(1, 9), gaussian_noise_stddev_range=(0, 1)):
+        """
+        poisson_intensity_range: (min, max) range for Poisson noise intensity.
+        blur_kernel_range: (min, max) range for random Gaussian blur kernel size (odd numbers only).
+        """
+        self.poisson_intensity_range = poisson_intensity_range
+        self.blur_kernel_range = blur_kernel_range
+        self.gaussian_noise_stddev_range = gaussian_noise_stddev_range
 
-    def add_poisson_noise(self, image):
+    
+    def add_gaussian_noise(self, image):
+        std_dev = np.random.uniform(*self.gaussian_noise_stddev_range)
+        noise = np.random.normal(0, std_dev, image.shape).astype(np.uint8)
+        noisy_image = cv2.add(image, noise)  # Adds noise to the image
+        return noisy_image
+
+    def add_poisson_noise(self, image, intensity_factor):
+        """
+        Adds Poisson noise scaled by a random intensity factor.
+        """
         vals = len(np.unique(image))
         vals = 2 ** np.ceil(np.log2(vals))  # Adjust to power of 2
-        noisy = np.random.poisson(image * vals) / float(vals)
+        noisy = np.random.poisson(image * vals * intensity_factor) / float(vals)
         noisy_image = np.clip(noisy, 0, 255).astype(np.uint8)
         return noisy_image
+
+    def get_random_kernel_size(self):
+        """
+        Returns a random odd kernel size within the specified range.
+        """
+        size = random.randint(self.blur_kernel_range[0] // 2, self.blur_kernel_range[1] // 2) * 2 + 1
+        return (size, size)
 
     def __call__(self, sample):
         if isinstance(sample, dict):
@@ -22,22 +48,30 @@ class Noise:
 
         opencv_image = np.array(img)
         
-         # Blur
-        if self.blur_kernel:
-            opencv_image = cv2.GaussianBlur(opencv_image, self.blur_kernel, 0)
-        # Noise
-        if self.poisson_noise:
-            opencv_image = self.add_poisson_noise(opencv_image)
+        # Apply random Gaussian blur
+        if self.blur_kernel_range:
+            kernel_size = self.get_random_kernel_size()
+            opencv_image = cv2.GaussianBlur(opencv_image, kernel_size, 0)
 
+        opencv_image = self.add_gaussian_noise(opencv_image)
+
+        # Apply random Poisson noise
+        if self.poisson_intensity_range:
+            intensity_factor = np.random.uniform(*self.poisson_intensity_range)
+            opencv_image = self.add_poisson_noise(opencv_image, intensity_factor)
+
+        
         img = Image.fromarray(opencv_image)
 
         if isinstance(sample, dict):
             result = sample.copy()
             result['image'] = img
         elif isinstance(sample, Image.Image):
+            img.show()
             result = img
 
         return result
+
 
 class CLAHEPreprocess:
     def __init__(self, clip_limit=5.0, tile_grid_size=(10, 10), min_area=15000, poisson_noise=False, blur_kernel=None):

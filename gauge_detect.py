@@ -217,7 +217,7 @@ def main(image_dir, model_path, epochs, batch_size, num_workers, finetune, finet
         scripted_model = torch.jit.script(model)
         torch.jit.save(scripted_model, model_path)
 
-        state_ditct_path = model_path + '_state_dict.pth'
+        state_ditct_path = model_path + '.state_dict.pth'
         torch.save(model.state_dict(), state_ditct_path)
         print(f"Epoch complete. TorchScript model saved as '{model_path}'. State dict saved as '{state_ditct_path}'.")
     # Save the model using TorchScript for inference
