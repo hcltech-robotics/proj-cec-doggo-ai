@@ -7,7 +7,7 @@ from PIL import Image
 import random
 
 class Noise:
-    def __init__(self, poisson_intensity_range=(0.7, 2.0), blur_kernel_range=(1, 9), gaussian_noise_stddev_range=(0, 1)):
+    def __init__(self, poisson_intensity_range=(0.7, 2.5), blur_kernel_range=(1, 13), gaussian_noise_stddev_range=(0.1, 1.3)):
         """
         poisson_intensity_range: (min, max) range for Poisson noise intensity.
         blur_kernel_range: (min, max) range for random Gaussian blur kernel size (odd numbers only).
@@ -67,7 +67,9 @@ class Noise:
             result = sample.copy()
             result['image'] = img
         elif isinstance(sample, Image.Image):
-            img.show()
+            # import uuid
+            # uuid_str = str(uuid.uuid4())
+            # img.save(f"noisy_{uuid_str}.png")
             result = img
 
         return result

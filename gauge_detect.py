@@ -233,7 +233,7 @@ if __name__ == "__main__":
                         help="Path to save the TorchScript model.")
     parser.add_argument('--batch_size', type=int, default=32,
                         help="Batch size for training.")
-    parser.add_argument('--num_workers', type=int, default=2,
+    parser.add_argument('--num_workers', type=int, default=8,
                         help="Number of DataLoader worker threads.")
     parser.add_argument('--epochs', type=int, default=10,
                         help="Number of epochs for training.")

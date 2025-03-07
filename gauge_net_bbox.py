@@ -203,10 +203,10 @@ def main(args):
     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
     train_loader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4
+        train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8
     )
     test_loader = DataLoader(
-        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4
+        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=8
     )
 
     # 5. Initialize Model, Loss, and Optimizer
