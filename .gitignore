@@ -4,3 +4,5 @@ checkpoints
 venv
 test
 test_data
+*.mp4
+*.onnx
