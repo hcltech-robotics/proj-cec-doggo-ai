@@ -9,6 +9,8 @@ def generate_launch_description():
     # Create an empty launch description
     ld = launch.LaunchDescription()
 
+    topic_remaps = [('image', 'apriltag/image_rect')]
+
     # Declare launch arguments
     gauge_detector_weights = launch.substitutions.LaunchConfiguration('gauge_detector_weights')
     gauge_reader_weights = launch.substitutions.LaunchConfiguration('gauge_reader_weights')
@@ -34,6 +36,16 @@ def generate_launch_description():
     ld.add_action(
         launch.actions.DeclareLaunchArgument(
             'image_topic', description='Image topic to subscribe to'
+        )
+    )
+
+    ld.add_action(
+        launch_ros.actions.Node(
+            package='gauge_net',
+            executable='gauge_detector',
+            name='gauge_detector',
+            parameters=[{'model_file': gauge_detector_weights}, qos_config],
+            remappings=topic_remaps,
         )
     )
 
