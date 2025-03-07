@@ -21,7 +21,6 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'gauge_detector = gauge_net.gauge_detector:main',
             'gauge_reader = gauge_net.gauge_reader:main',
         ]
     },

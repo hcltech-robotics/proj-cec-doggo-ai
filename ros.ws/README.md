@@ -16,9 +16,9 @@ This README provides instructions for building and running the available ROS2 en
 
 ## Available Endpoints
 
-### Gauge Detector
+### Gauge Readar
 
-The gauge detector endpoint receives an image from the `image` topic and runs a specially trained FastRCNN model that detect manual gauges and manual gauge needles. 
+The gauge_redar node receives an image from the `image` topic and runs a specially trained FastRCNN model that detect manual gauges and manual gauge needles. 
 
 Run the following command to launch the gauge detector:
 ```
@@ -44,7 +44,8 @@ To start both the gauge detector and gauge reader nodes using a single launch fi
 ```bash
 ros2 launch gauge_net gauge_net.launch.py \
     gauge_detector_weights:=/path/to/gauge_detect.pt \
-    gauge_reader_weights:=/path/to/gauge_net_boxed_grayscale.pt
+    gauge_reader_weights:=/path/to/gauge_net.pt \
+    image_topic:=/topic_where_input_published
 ```
 
 ## Setting Image Process Mode

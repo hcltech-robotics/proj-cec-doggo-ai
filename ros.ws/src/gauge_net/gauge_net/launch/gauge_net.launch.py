@@ -12,6 +12,7 @@ def generate_launch_description():
     # Declare launch arguments
     gauge_detector_weights = launch.substitutions.LaunchConfiguration('gauge_detector_weights')
     gauge_reader_weights = launch.substitutions.LaunchConfiguration('gauge_reader_weights')
+    image_topic = launch.substitutions.LaunchConfiguration('image_topic', default='/image')
 
     # QoS configuration file
     qos_config = os.path.join(
@@ -30,23 +31,26 @@ def generate_launch_description():
         )
     )
 
-    # Add gauge_detector node
     ld.add_action(
-        launch_ros.actions.Node(
-            package='gauge_net',
-            executable='gauge_detector',
-            name='gauge_detector',
-            parameters=[{'model_file': gauge_detector_weights}, qos_config],
+        launch.actions.DeclareLaunchArgument(
+            'image_topic', description='Image topic to subscribe to'
         )
     )
 
-    # Add gauge_reader node
+    # Add gauge_readerv node
     ld.add_action(
         launch_ros.actions.Node(
             package='gauge_net',
             executable='gauge_reader',
             name='gauge_reader',
-            parameters=[{'model_file': gauge_reader_weights}, qos_config],
+            parameters=[
+                {
+                    'detector_model_file': gauge_detector_weights,
+                    'reader_model_file': gauge_reader_weights,
+                    'image_topic': image_topic,
+                },
+                qos_config,
+            ],
         )
     )
 
