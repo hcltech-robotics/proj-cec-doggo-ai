@@ -342,7 +342,7 @@ class GaugeReaderNode(Node):
         if detection_result['gauge']['score'] < self._min_gauge_score:
             self.get_logger().warning('Skipping observation: missing valid gauge detection.')
             return
-        if detection_result['needle']['score'] < self._min_gauge_score:
+        if detection_result['needle']['score'] < self._min_needle_score:
             self.get_logger().warning('Skipping observation: missing valid needle detection.')
             return
         if not self._needle_in_gauge(
