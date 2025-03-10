@@ -9,7 +9,6 @@ def generate_launch_description():
     # Create an empty launch description
     ld = launch.LaunchDescription()
 
-
     # Declare launch arguments
     gauge_detector_weights = launch.substitutions.LaunchConfiguration('gauge_detector_weights')
     gauge_reader_weights = launch.substitutions.LaunchConfiguration('gauge_reader_weights')
@@ -38,8 +37,7 @@ def generate_launch_description():
         )
     )
 
-
-    # Add gauge_readerv node
+    # Add gauge_reader node
     ld.add_action(
         launch_ros.actions.Node(
             package='gauge_net',

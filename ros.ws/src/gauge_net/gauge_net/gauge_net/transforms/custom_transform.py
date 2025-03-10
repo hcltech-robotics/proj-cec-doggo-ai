@@ -4,7 +4,10 @@ from PIL import Image, ImageOps
 
 
 class CLAHEPreprocess:
-    def __init__(self, clip_limit=5.0, tile_grid_size=(10, 10), min_area_ratio=0.01, threshold_scaling=0.8):
+
+    def __init__(
+        self, clip_limit=5.0, tile_grid_size=(10, 10), min_area_ratio=0.01, threshold_scaling=0.8
+    ):
         self.clip_limit = clip_limit
         self.tile_grid_size = tile_grid_size
         self.min_area_ratio = min_area_ratio  # Dynamic min_area based on image size
@@ -30,12 +33,14 @@ class CLAHEPreprocess:
         # Step 2: Adaptive thresholding for needle extraction (dark regions)
         median_intensity = np.median(enhanced_image)
         needle_threshold_value = int(median_intensity * self.threshold_scaling)
-        _, needle_mask = cv2.threshold(enhanced_image, needle_threshold_value, 255, cv2.THRESH_BINARY_INV)
+        _, needle_mask = cv2.threshold(
+            enhanced_image, needle_threshold_value, 255, cv2.THRESH_BINARY_INV
+        )
 
         # Step 3: Detect the gauge face (bright regions) to remove outer background
         _, gauge_mask = cv2.threshold(enhanced_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Step 4: Find the largest contour 
+        # Step 4: Find the largest contour
         contours, _ = cv2.findContours(gauge_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             max_contour = max(contours, key=cv2.contourArea)
@@ -51,7 +56,6 @@ class CLAHEPreprocess:
         img = Image.fromarray(final_mask)
 
         return {'image': img, 'bbox': bbox}
-
 
 
 class ResizeWithPaddingAndBBox:
