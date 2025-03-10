@@ -76,13 +76,11 @@ class Noise:
 
 
 class CLAHEPreprocess:
-    def __init__(self, clip_limit=5.0, tile_grid_size=(10, 10), min_area_ratio=0.01, threshold_scaling=0.8, poisson_noise=False, blur_kernel=None):
+    def __init__(self, clip_limit=5.0, tile_grid_size=(10, 10), min_area_ratio=0.01, threshold_scaling=0.8):
         self.clip_limit = clip_limit
         self.tile_grid_size = tile_grid_size
         self.min_area_ratio = min_area_ratio  # Dynamic min_area based on image size
         self.threshold_scaling = threshold_scaling  # Scaling factor for adaptive thresholding
-        self.blur_kernel = blur_kernel
-        self.poisson_noise = poisson_noise
 
     def add_poisson_noise(self, image):
         vals = len(np.unique(image))
@@ -97,14 +95,6 @@ class CLAHEPreprocess:
 
         # Convert PIL to OpenCV (NumPy array)
         opencv_image = np.array(img)
-
-
-        # Blur
-        if self.blur_kernel:
-            opencv_image = cv2.GaussianBlur(opencv_image, self.blur_kernel, 0)
-        # Noise
-        if self.poisson_noise:
-            opencv_image = self.add_poisson_noise(opencv_image)
 
         # Convert to grayscale (handling RGB/RGBA cases)
         if opencv_image.shape[-1] == 4:
