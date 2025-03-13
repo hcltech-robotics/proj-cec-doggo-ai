@@ -9,6 +9,8 @@ from torchvision import transforms
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor, FasterRCNN_ResNet50_FPN_V2_Weights
 from torch.utils.data import DataLoader, Dataset
 
+from custom_transform import Noise
+
 # ----------------------------
 # Custom Dataset for Gauges
 # ----------------------------
@@ -130,6 +132,9 @@ def get_model(num_classes, model_path = None, finetune=False, device=torch.devic
 
     return model
 
+
+
+
 # ----------------------------
 # Transforms Definition
 # ----------------------------
@@ -140,8 +145,11 @@ def get_transform(train):
       - Converts the PIL image to a tensor,
       - Normalizes the image using ImageNet means and stds.
     """
+    noise = Noise()
+
     return transforms.Compose([
         #transforms.Resize((512, 512)),
+        noise,
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225])
@@ -209,7 +217,7 @@ def main(image_dir, model_path, epochs, batch_size, num_workers, finetune, finet
         scripted_model = torch.jit.script(model)
         torch.jit.save(scripted_model, model_path)
 
-        state_ditct_path = model_path + '_state_dict.pth'
+        state_ditct_path = model_path + '.state_dict.pth'
         torch.save(model.state_dict(), state_ditct_path)
         print(f"Epoch complete. TorchScript model saved as '{model_path}'. State dict saved as '{state_ditct_path}'.")
     # Save the model using TorchScript for inference
@@ -225,7 +233,7 @@ if __name__ == "__main__":
                         help="Path to save the TorchScript model.")
     parser.add_argument('--batch_size', type=int, default=32,
                         help="Batch size for training.")
-    parser.add_argument('--num_workers', type=int, default=2,
+    parser.add_argument('--num_workers', type=int, default=8,
                         help="Number of DataLoader worker threads.")
     parser.add_argument('--epochs', type=int, default=10,
                         help="Number of epochs for training.")
