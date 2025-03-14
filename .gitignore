@@ -4,5 +4,7 @@ checkpoints
 venv
 test
 test_data
+*.mp4
+*.onnx
 cuda-keyring_1.1-1_all.deb
 2.6.0rc1

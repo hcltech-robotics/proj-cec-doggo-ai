@@ -2,55 +2,63 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 import launch
+from launch.substitutions import LaunchConfiguration
 import launch_ros.actions
 
 
 def generate_launch_description():
-    # Create an empty launch description
+    package_name = 'gauge_net'
+
+    # Get package share directory
+    package_share_dir = get_package_share_directory(package_name)
+
+    # Define default paths for model weights inside the installed package
+    default_gauge_detector_weights = os.path.join(package_share_dir, 'models', 'gauge_detect.pt')
+    default_gauge_reader_weights = os.path.join(package_share_dir, 'models', 'gauge_reader.pt')
+
+    # Create launch description
     ld = launch.LaunchDescription()
 
-    topic_remaps = [('image', 'apriltag/image_rect')]
+    # Declare launch arguments with proper defaults
+    ld.add_action(
+        launch.actions.DeclareLaunchArgument(
+            'gauge_detector_weights',
+            description='Path to weights for gauge_detector',
+            default_value=default_gauge_detector_weights,
+        )
+    )
 
-    # Declare launch arguments
-    gauge_detector_weights = launch.substitutions.LaunchConfiguration('gauge_detector_weights')
-    gauge_reader_weights = launch.substitutions.LaunchConfiguration('gauge_reader_weights')
+    ld.add_action(
+        launch.actions.DeclareLaunchArgument(
+            'gauge_reader_weights',
+            description='Path to weights for gauge_reader',
+            default_value=default_gauge_reader_weights,
+        )
+    )
+
+    # Create LaunchConfigurations
+    gauge_detector_weights = LaunchConfiguration('gauge_detector_weights')
+    gauge_reader_weights = LaunchConfiguration('gauge_reader_weights')
 
     # QoS configuration file
-    qos_config = os.path.join(
-        get_package_share_directory('gauge_net'), 'config', 'qos_config.yaml'
-    )
-
-    ld.add_action(
-        launch.actions.DeclareLaunchArgument(
-            'gauge_detector_weights', description='Path to weights for gauge_detector'
-        )
-    )
-
-    ld.add_action(
-        launch.actions.DeclareLaunchArgument(
-            'gauge_reader_weights', description='Path to weights for gauge_reader'
-        )
-    )
-
-    # Add gauge_detector node
-    ld.add_action(
-        launch_ros.actions.Node(
-            package='gauge_net',
-            executable='gauge_detector',
-            name='gauge_detector',
-            parameters=[{'model_file': gauge_detector_weights}, qos_config],
-            remappings=topic_remaps,
-        )
-    )
+    qos_config = os.path.join(package_share_dir, 'config', 'qos_config.yaml')
+    # Parameters configuration file
+    param_config = os.path.join(package_share_dir, 'config', 'config.yaml')
 
     # Add gauge_reader node
     ld.add_action(
         launch_ros.actions.Node(
-            package='gauge_net',
+            package=package_name,
             executable='gauge_reader',
             name='gauge_reader',
-            parameters=[{'model_file': gauge_reader_weights}, qos_config],
-            remappings=topic_remaps,
+            parameters=[
+                {
+                    'detector_model_file': gauge_detector_weights,
+                    'reader_model_file': gauge_reader_weights,
+                },
+                qos_config,
+                param_config,
+            ],
         )
     )
 
