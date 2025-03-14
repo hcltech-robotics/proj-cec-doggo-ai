@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import os
 
 import cv2
@@ -31,19 +32,23 @@ class GaugeReaderNode(Node):
         self.declare_parameters(
             namespace=self._namespace,
             parameters=[
-                ('image_topic', '/image'),
+                ('use_math', True),
+                ('image_topic', '/apriltag/image_rect'),
                 ('detector_model_file', ''),
                 ('reader_model_file', ''),
                 ('min_gauge_score', 0.99),
                 ('min_needle_score', 0.95),
                 ('scaling_min', 0.0),
-                ('scaling_max', 100.0),
+                ('scaling_max', 10.0),
                 ('image_stream.reliability', rclpy.Parameter.Type.STRING),
                 ('image_stream.history', rclpy.Parameter.Type.STRING),
                 ('image_stream.depth', rclpy.Parameter.Type.INTEGER),
             ],
         )
 
+        self._use_math_reading = (
+            self.get_parameter(f'{self._node_name}.use_math').get_parameter_value().bool_value
+        )
         self._image_topic = (
             self.get_parameter(f'{self._node_name}.image_topic').get_parameter_value().string_value
         )
@@ -81,7 +86,7 @@ class GaugeReaderNode(Node):
             self.get_logger().error(f'Detector model file not found: {detector_model_path}')
             raise FileNotFoundError(f'Missing detector model: {detector_model_path}')
 
-        if not os.path.isfile(reader_model_path):
+        if not os.path.isfile(reader_model_path) and not self._use_math_reading:
             self.get_logger().error(f'Reader model file not found: {reader_model_path}')
             raise FileNotFoundError(f'Missing reader model: {reader_model_path}')
 
@@ -90,8 +95,9 @@ class GaugeReaderNode(Node):
         self._detector_model.eval()
 
         # Load the reader model.
-        self._reader_model = torch.jit.load(reader_model_path, map_location=self._device)
-        self._reader_model.eval()
+        if not self._use_math_reading:
+            self._reader_model = torch.jit.load(reader_model_path, map_location=self._device)
+            self._reader_model.eval()
 
         # Image processing pipeline for the detector.
         self._detector_transform = transforms.Compose(
@@ -329,6 +335,51 @@ class GaugeReaderNode(Node):
 
         self._gauge_reading_pub.publish(gauge_reading_msg)
 
+    def _calculate_gauge_value(self, cropped_gauge, needle_bbox):
+        # Image dimensions
+        height, width = cropped_gauge.shape[:2]
+
+        # Gauge center
+        C_x, C_y = width / 2, height / 2
+
+        # Extract needle region
+        x_min, y_min, x_max, y_max = needle_bbox
+
+        test_points = [
+            (x_min, y_min),
+            (x_max, y_min),  # Top corners
+            (x_min, y_max),
+            (x_max, y_max),  # Bottom corners
+            ((x_min + x_max) / 2, y_min),  # Top middle
+            ((x_min + x_max) / 2, y_max),  # Bottom middle
+            (x_min, (y_min + y_max) / 2),  # Left middle
+            (x_max, (y_min + y_max) / 2),  # Right middle
+        ]
+        N_x, N_y = max(test_points, key=lambda p: math.dist(p, (C_x, C_y)))
+
+        # Compute vector from center to needle tip
+        V_x = N_x - C_x  # Horizontal distance from center
+        V_y = C_y - N_y  # Vertical distance (flipped for image coords)
+
+        # Calculate the angle relative to the vertical dividing line
+        theta_rad = math.atan2(V_x, V_y)  # Swapped args to align with vertical axis
+        theta_deg = math.degrees(theta_rad)
+
+        # Ensure angle is within [-135°, 135°]
+        if theta_deg < -135:
+            theta_deg += 360  # Wrap around if needed
+
+        # Convert to gauge value (0-10 range)
+        gauge_value = (theta_deg + 135) / 270 * self._scaling_max
+
+        return {
+            'needle_tip': (N_x, N_y),
+            'center': (C_x, C_y),
+            'angle_degrees': theta_deg,
+            'gauge_value': gauge_value,
+            'raw_value': gauge_value / self._scaling_max,  # Normalized value
+        }
+
     def image_callback(self, msg):
         if self._process_mode == GaugeProcess.Request.MODE_DO_NOTHING:
             return
@@ -354,10 +405,25 @@ class GaugeReaderNode(Node):
         cropped_gauge, needle_bbox = self._crop_gauge(cv_image, detection_result)
         self._publish_gauge_image(cropped_gauge.copy(), needle_bbox, header)
 
-        trans_gauge, trans_needle = self._transform_data(cropped_gauge, needle_bbox)
-        self._publish_transformed_image(trans_gauge.copy(), trans_needle, header)
+        if self._use_math_reading:
+            result = self._calculate_gauge_value(cropped_gauge, needle_bbox)
 
-        gauge_reading = self._read_gauge_value(trans_gauge, trans_needle)
+            self.get_logger().info(
+                f'Needle bounding box: {needle_bbox} '
+                f'(width={needle_bbox[2]-needle_bbox[0]}, '
+                f'height={needle_bbox[3]-needle_bbox[1]})'
+            )
+            self.get_logger().info(f"Needle tip detected at: {result['needle_tip']}")
+            self.get_logger().info(f"Gauge center: {result['center']}")
+            self.get_logger().info(f"Gauge Needle Angle: {result['angle_degrees']:.2f}° of {270}°")
+            self.get_logger().info(f"Gauge Value: {result['gauge_value']:.2f} of 10")
+
+            gauge_reading = result['raw_value']
+        else:
+            trans_gauge, trans_needle = self._transform_data(cropped_gauge, needle_bbox)
+            self._publish_transformed_image(trans_gauge.copy(), trans_needle, header)
+
+            gauge_reading = self._read_gauge_value(trans_gauge, trans_needle)
 
         # Publish the gauge reading
         self._publish_gauge_reading(gauge_reading, header)

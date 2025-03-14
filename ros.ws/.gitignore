@@ -3,3 +3,4 @@ log
 install
 .vscode
 .flake8
+models
