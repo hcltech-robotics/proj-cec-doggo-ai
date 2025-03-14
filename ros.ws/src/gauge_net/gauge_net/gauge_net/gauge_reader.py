@@ -309,7 +309,9 @@ class GaugeReaderNode(Node):
         try:
             # Transform the image to a tensor
             gauge_tensor = transforms.ToTensor()(gauge_image).unsqueeze(0).to(self._device)
-            bbox_tensor = torch.tensor(needle_bbox, dtype=torch.float32).unsqueeze(0).to(self._device)
+            bbox_tensor = (
+                torch.tensor(needle_bbox, dtype=torch.float32).unsqueeze(0).to(self._device)
+            )
 
             # Call the reader model
             with torch.no_grad():
@@ -317,16 +319,18 @@ class GaugeReaderNode(Node):
 
             # Get the gauge reading
             gauge_reading = output.item()
-            
+
             # Validate the reading is within expected range
             if not 0.0 <= gauge_reading <= 1.0:
-                self.get_logger().warning(f"Model returned out-of-range value: {gauge_reading}, clamping to [0,1]")
+                self.get_logger().warning(
+                    f'Model returned out-of-range value: {gauge_reading}, clamping to [0,1]'
+                )
                 gauge_reading = max(0.0, min(1.0, gauge_reading))
-                
+
             return gauge_reading
-            
+
         except Exception as e:
-            self.get_logger().error(f"Unexpected error in gauge reading: {str(e)}")
+            self.get_logger().error(f'Unexpected error in gauge reading: {str(e)}')
             return 0.0
 
     def _publish_gauge_reading(self, gauge_reading, header):
