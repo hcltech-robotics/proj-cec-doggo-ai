@@ -45,28 +45,14 @@ def generate_launch_description():
                     ('camera_info', '/camera/camera/color/camera_info')]
     )
 
-    # resize_node = ComposableNode(
-    #     package='isaac_ros_image_proc',
-    #     plugin='nvidia::isaac_ros::image_proc::ResizeNode',
-    #     name='resize_for_visualization',
-    #     namespace='',
-    #     parameters=[{
-    #         'output_width': 640,
-    #         'output_height': 360,  # Maintaining the 16:9 aspect ratio
-    #         'keep_aspect_ratio': True
-    #     }],
-    #     remappings=[('/image', '/camera/camera/color/image_raw'),
-    #                 ('/camera_info', '/camera/camera/color/camera_info'),
-    #                 ('/resize/image', '/camera/camera/color_resized/image_raw')]
-    # )
-
     apriltag_node = ComposableNode(
         package='isaac_ros_apriltag',
         plugin='nvidia::isaac_ros::apriltag::AprilTagNode',
         name='apriltag',
         namespace='apriltag',
         parameters=[{
-            'size': 0.08,
+            # 'size': 0.08,
+             'size': 0.0766,
             'max_tags': 32,
         }],
         remappings=[
@@ -91,7 +77,6 @@ def generate_launch_description():
         executable='component_container_mt',
         composable_node_descriptions=[
             rectify_node,
-            # resize_node,
             apriltag_node,
         ],
         output='screen'
