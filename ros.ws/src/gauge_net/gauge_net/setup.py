@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+import glob
 
 package_name = 'gauge_net'
 
@@ -11,10 +12,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/gauge_net.launch.py']),
         ('share/' + package_name + '/config', ['config/qos_config.yaml', 'config/config.yaml']),
-        (
-            'share/' + package_name + '/models',
-            ['models/gauge_detect.pt', 'models/gauge_reader.pt'],
-        ),
+        ('share/' + package_name + '/models', glob.glob('models/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
