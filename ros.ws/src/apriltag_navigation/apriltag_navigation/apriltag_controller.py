@@ -154,6 +154,9 @@ class AprilTagController(Node):
 
     def start_control(self, request, response):
         """Start the navigation control loop."""
+
+        self.get_logger().info('Starting navigation control loop...')
+
         self.tag_in_odom_frame = None
         self.tag_orientation_in_odom = None
         self.tag_detected = False
@@ -454,21 +457,28 @@ class AprilTagController(Node):
             self.get_logger().info('No tag detected, searching... (pausing)')
 
     def call_gauge_read(self):
+        """ Call the gauge reader service asynchronously. """
 
         # Create request message
         request = GaugeProcess.Request()
-        request.process_mode = 1  # Set the desired process mode
+        request.process_mode = 1
 
         self.get_logger().info(f"Sending request: {request}")
 
-        # Call the service synchronously
-        response = self.gauge_reader.call(request)
+        # Call the service asynchronously
+        future = self.gauge_reader.call_async(request)
+        future.add_done_callback(self.gauge_response_callback)
 
-        # Handle the response
-        if response:
-            self.get_logger().info(f"Received response: {response}")
-        else:
-            self.get_logger().error("Failed to receive response.")
+    def gauge_response_callback(self, future):
+        """ Handle the response from the gauge reader service. """
+        try:
+            response = future.result()
+            if response:
+                self.get_logger().info(f"Received response: {response}")
+            else:
+                self.get_logger().error("Failed to receive response.")
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
 
 
 def main(args=None):
