@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-utils \
     libgl1-mesa-glx \
     libgl1-mesa-dri \
-    software-properties-common
+    software-properties-common \
+    ros-humble-rmw-cyclonedds-cpp
 
 # Install specific numpy version first
 RUN pip install 'numpy<2.0.0'
@@ -30,7 +31,7 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
 
 # Build the workspace
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
-    colcon build --symlink-install
+    colcon build
 
 # Source ROS2 and workspace in bashrc
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
