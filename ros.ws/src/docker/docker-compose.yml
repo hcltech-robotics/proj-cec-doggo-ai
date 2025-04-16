@@ -1,0 +1,20 @@
+services:
+  apriltag_navigation:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: robot-base:latest 
+    network_mode: "host"  # Required for ROS2 discovery and robot communication
+    privileged: true  # Required for hardware access
+    devices:
+      - /dev/input:/dev/input  # For joystick access
+    restart: unless-stopped
+    command:  ["ros2", "launch", "apriltag_navigation", "nav_lite.launch.py"]
+  gaugenet:
+    image: robot-base:latest 
+    volumes:
+      - ./gauge_net/gauge_net/models:/ros.ws/src/gauge_net/gauge_net/models
+    network_mode: "host"  # Required for ROS2 discovery and robot communication
+    privileged: true  # Required for hardware access
+    restart: unless-stopped
+    command:  ["ros2", "launch", "gauge_net", "gauge_net.launch.py"]

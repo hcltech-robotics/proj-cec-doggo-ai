@@ -13,7 +13,7 @@ def generate_launch_description():
     package_share_dir = get_package_share_directory(package_name)
 
     # Define default paths for model weights inside the installed package
-    default_gauge_detector_weights = os.path.join(package_share_dir, 'models', 'gauge_detect.pt')
+    default_gauge_detector_weights = os.path.join(package_share_dir, 'models', 'gauge_detect.pth')
     default_gauge_reader_weights = os.path.join(package_share_dir, 'models', 'gauge_reader.pt')
 
     # Create launch description
@@ -44,6 +44,8 @@ def generate_launch_description():
     qos_config = os.path.join(package_share_dir, 'config', 'qos_config.yaml')
     # Parameters configuration file
     param_config = os.path.join(package_share_dir, 'config', 'config.yaml')
+
+    print(param_config)
 
     # Add gauge_reader node
     ld.add_action(
