@@ -3,7 +3,7 @@
 import math
 
 from geometry_msgs.msg import PoseStamped, TransformStamped, Twist
-from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
+
 from nav_msgs.msg import Odometry
 import numpy as np
 import rclpy
@@ -76,6 +76,7 @@ class AprilTagController(Node):
         self.declare_parameter('optical_frame_id', 'camera_color_optical_frame')
         self.declare_parameter('base_frame_id', 'base_link')
         self.declare_parameter('odom_frame_id', 'odom')
+        self.declare_parameter('use_isaac_apriltag', True)
 
         # PID controllers for 3-DOF control
         self.linear_x_pid = PIDController(kp=0.6, ki=0.1, kd=0.1, max_output=0.2)
@@ -91,11 +92,20 @@ class AprilTagController(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=1
         )
+        
+        if self.get_parameter('use_isaac_apriltag').get_parameter_value().bool_value:
+            from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
+            self.detection_type = AprilTagDetectionArray
+            self.detections_topic = '/apriltag/tag_detections'
+        else:
+            from apriltag_msgs.msg import AprilTagDetectionArray
+            self.detection_type = AprilTagDetectionArray
+            self.detections_topic = '/apriltag/detections'
 
         # Subscribe to AprilTag detections from Isaac ROS
         self.tag_sub = self.create_subscription(
-            AprilTagDetectionArray,
-            '/apriltag/tag_detections',
+            self.detection_type,
+            self.detections_topic,
             self.tag_callback,
             tag_qos
         )
@@ -243,6 +253,7 @@ class AprilTagController(Node):
         """Process AprilTag detections."""
         for detection in msg.detections:
             if detection.id == self.target_tag_id:
+                self.get_logger().warn(f"Received apriltag detection: {detection}")
                 self.tag_detected = True
                 self.last_detection_time = self.get_clock().now()
 

@@ -31,7 +31,7 @@ def generate_launch_description():
 
     # Get the config file
     config_file = os.path.join(
-        package_dir, 'config', 'apriltag_controller_params.yaml')
+        package_dir, 'config', 'lite_apriltag_controller_params.yaml')
     
 
     rectify_node = ComposableNode(
@@ -50,10 +50,10 @@ def generate_launch_description():
         namespace='apriltag',
         parameters=[{
             'family': '36h11',
-            'size': 0.08,
+            'size': 0.0766,
         }],
         remappings=[
-            ('image_rect', 'image_rect'),
+            ('image_rect', '/apriltag/image_rect'),
             ('camera_info', '/camera/camera_info'),
             ('tf', '/tf')
         ],
