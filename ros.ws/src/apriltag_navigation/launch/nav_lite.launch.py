@@ -21,10 +21,11 @@ from ament_index_python.packages import get_package_share_directory
 import launch
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
+from launch.substitutions import LaunchConfiguration, Command, EnvironmentVariable
 
 
 def generate_launch_description():
-
+    on_exit = LaunchConfiguration('on_exit', default='shutdown')
     # Get the package share directory
     package_dir = get_package_share_directory('apriltag_navigation')
 
@@ -39,7 +40,7 @@ def generate_launch_description():
         name='rectify',
         namespace='apriltag',
         remappings=[('image', '/camera/image_raw'),
-                    ('camera_info', '/camera/camera_info')]
+                    ('camera_info', '/camera/camera_info')],
     )
 
     apriltag_node = ComposableNode(
@@ -55,16 +56,17 @@ def generate_launch_description():
             ('image_rect', 'image_rect'),
             ('camera_info', '/camera/camera_info'),
             ('tf', '/tf')
-        ]
+        ],
     )
 
-    # controller_node = Node(
-    #     package='apriltag_navigation',
-    #     executable='apriltag_controller',
-    #     name='apriltag_controller',
-    #     parameters=[config_file],
-    #     output='screen'
-    # )
+    controller_node = Node(
+        package='apriltag_navigation',
+        executable='apriltag_controller',
+        name='apriltag_controller',
+        parameters=[config_file],
+        output='screen',
+        on_exit=on_exit,
+    )
 
     apriltag_container = ComposableNodeContainer(
         package='rclcpp_components',
@@ -76,8 +78,9 @@ def generate_launch_description():
             # resize_node,
             apriltag_node,
         ],
-        output='screen'
+        output='screen',
+        on_exit=on_exit,
     )
 
-    #return launch.LaunchDescription([apriltag_container, controller_node])
-    return launch.LaunchDescription([apriltag_container])
+    return launch.LaunchDescription([apriltag_container, controller_node])
+    #return launch.LaunchDescription([apriltag_container])

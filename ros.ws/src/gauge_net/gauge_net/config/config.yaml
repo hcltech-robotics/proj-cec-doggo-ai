@@ -1,7 +1,7 @@
 gauge_reader:
   ros__parameters:
     image_topic: "/camera/image_raw"
-    use_math: false
+    use_math: true
     min_gauge_score: 0.99
     min_needle_score: 0.95
     scaling_min: 0.0

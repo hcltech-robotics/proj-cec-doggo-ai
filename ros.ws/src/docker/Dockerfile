@@ -14,16 +14,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rmw-cyclonedds-cpp
 
 # Install specific numpy version first
-RUN pip install 'numpy<2.0.0'
+
 
 # Create workspace
 WORKDIR /ros2_ws
 
 # Clone the repository with submodules
-COPY . /ros2_ws/src
+COPY requirements.txt /ros2_ws/src/requirements.txt
+RUN pip install 'numpy<2.0.0'
 
 # Install Python requirements (with numpy constraint)
 RUN cd src && pip install -r requirements.txt
+
+# Copy rest of the source code
+COPY . /ros2_ws/src
 
 # Install ROS dependencies
 RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
