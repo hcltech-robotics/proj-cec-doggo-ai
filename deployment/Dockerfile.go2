@@ -1,0 +1,26 @@
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+ENV ROS_LOCALHOST_ONLY=1
+
+# Fundamentals
+RUN --mount=type=cache,target=/var/cache/apt \
+    apt-get update && apt-get install -y \
+    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+    ros-${ROS_DISTRO}-cyclonedds \
+    nlohmann-json3-dev \
+    ros-${ROS_DISTRO}-foxglove-bridge \
+    ros-${ROS_DISTRO}-isaac-ros-apriltag \
+    ros-${ROS_DISTRO}-rosidl-generator-dds-idl \
+    ros-${ROS_DISTRO}-image-transport \
+    ros-${ROS_DISTRO}-compressed-image-transport \
+    supervisor
+
+RUN pip --no-input uninstall -y setuptools_scm torch
+RUN pip --no-input install torch torchvision torchaudio --index-url https://pypi.jetson-ai-lab.dev/jp6/cu126/+simple/
+
+
+ADD go2.requirements.txt .
+RUN python3 -m pip install -U -r go2.requirements.txt
+
+COPY ./supervisord.conf /etc/supervisor/supervisord.conf
