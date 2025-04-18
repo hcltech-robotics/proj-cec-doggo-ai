@@ -549,7 +549,7 @@ class AprilTagController(Node):
             cmd.linear.x = 0.0
             cmd.linear.y = 0.0
             cmd.angular.z = 0.8  # Rotate slowly to search for tag
-            #self.cmd_vel_pub.publish(cmd)
+            self.cmd_vel_pub.publish(cmd)
             self.get_logger().info('No tag detected, searching... (rotating)')
         else:  # Pause for 1.5 seconds
             # Stop and wait to allow for detection
