@@ -7,7 +7,7 @@ apriltag_controller:
     position_threshold: 0.25        # meters, position lock tolerance
     angle_threshold: 0.25           # radians, yaw lock tolerance
     tag_timeout: 2.0                # seconds before considering tag lost
-    optical_frame_id: camera_color_optical_frame
+    optical_frame_id: front_camera
     base_frame_id: base_link
     odom_frame_id: odom
     use_isaac_apriltag: false        # set false to use non-Isaac AprilTag messages

@@ -59,6 +59,24 @@ def generate_launch_description():
         ],
     )
 
+    # apriltag_node = ComposableNode(
+    #     package='isaac_ros_apriltag',
+    #     plugin='nvidia::isaac_ros::apriltag::AprilTagNode',
+    #     name='apriltag',
+    #     namespace='apriltag',
+    #     parameters=[{
+    #         # 'size': 0.08,
+    #          'size': 0.0766,
+    #         'max_tags': 32,
+    #         'backend': 'cpu'
+    #     }],
+    #     remappings=[
+    #         ('image', 'image_rect'),
+    #         ('camera_info', 'camera_info_rect'),
+    #         ('tf', '/tf')
+    #     ]
+    # )
+
     controller_node = Node(
         package='apriltag_navigation',
         executable='apriltag_controller',

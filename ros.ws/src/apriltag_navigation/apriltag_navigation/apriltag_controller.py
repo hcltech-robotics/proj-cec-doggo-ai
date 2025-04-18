@@ -15,7 +15,7 @@ from visualization_msgs.msg import Marker
 from tf2_geometry_msgs import do_transform_pose
 import tf2_ros
 from gauge_net_interface.srv import GaugeProcess
-
+from geometry_msgs.msg import Pose, Point, Quaternion
 
 class PIDController:
     def __init__(self, kp=0.0, ki=0.0, kd=0.0, max_output=1.0):
@@ -78,6 +78,8 @@ class AprilTagController(Node):
         self.declare_parameter('odom_frame_id', 'odom')
         self.declare_parameter('use_isaac_apriltag', True)
 
+        self.use_isaac_apriltag = self.get_parameter('use_isaac_apriltag').get_parameter_value().bool_value
+
         # PID controllers for 3-DOF control
         self.linear_x_pid = PIDController(kp=0.6, ki=0.1, kd=0.1, max_output=0.2)
         self.linear_y_pid = PIDController(kp=0.6, ki=0.1, kd=0.1, max_output=0.2)
@@ -93,22 +95,7 @@ class AprilTagController(Node):
             depth=1
         )
         
-        if self.get_parameter('use_isaac_apriltag').get_parameter_value().bool_value:
-            from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
-            self.detection_type = AprilTagDetectionArray
-            self.detections_topic = '/apriltag/tag_detections'
-        else:
-            from apriltag_msgs.msg import AprilTagDetectionArray
-            self.detection_type = AprilTagDetectionArray
-            self.detections_topic = '/apriltag/detections'
-
-        # Subscribe to AprilTag detections from Isaac ROS
-        self.tag_sub = self.create_subscription(
-            self.detection_type,
-            self.detections_topic,
-            self.tag_callback,
-            tag_qos
-        )
+        
 
         # Subscribe to odometry for tracking robot position
         self.odom_sub = self.create_subscription(
@@ -146,6 +133,7 @@ class AprilTagController(Node):
         self.base_frame_id = self.get_parameter('base_frame_id').value
         self.odom_frame_id = self.get_parameter('odom_frame_id').value
         self.tag_frame_id = f'apriltag_{self.target_tag_id}'
+        self.apriltag_lib_tag_frame_id = f'tag36h11:{self.target_tag_id}'
 
         # Enhanced TF visualization
         self.publish_tf_visualizations = True
@@ -159,6 +147,25 @@ class AprilTagController(Node):
         self.position_threshold = self.get_parameter('position_threshold').value
         self.angle_threshold = self.get_parameter('angle_threshold').value
         self.tag_timeout = self.get_parameter('tag_timeout').value
+
+        if self.use_isaac_apriltag:
+            from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
+            self.detection_type = AprilTagDetectionArray
+            self.detections_topic = '/apriltag/tag_detections'
+        else:
+            from apriltag_msgs.msg import AprilTagDetectionArray
+            self.detection_type = AprilTagDetectionArray
+            self.detections_topic = '/apriltag/detections'
+
+        tag_callback = self.tag_callback if self.use_isaac_apriltag else self.tag_callback_lite
+
+        # Subscribe to AprilTag detections from Isaac ROS
+        self.tag_sub = self.create_subscription(
+            self.detection_type,
+            self.detections_topic,
+            tag_callback,
+            tag_qos
+        )
 
         self.get_logger().info('Simplified AprilTag Controller initialized with odom tracking')
 
@@ -248,12 +255,98 @@ class AprilTagController(Node):
         All our main visualization is now handled directly in publish_tag_transform().
         """
         pass
+    
+    def get_pose(self, camera_frame_id):
+        #Look up the pose from the tf buffer
+        try:
+            #self.get_logger().info(f"Looking up transform from {camera_frame_id} to {self.apriltag_lib_tag_frame_id}")
+            trans = self.tf_buffer.lookup_transform(
+                camera_frame_id,
+                self.apriltag_lib_tag_frame_id,
+                rclpy.time.Time()
+            )
+
+            pose = Pose()
+            pose.position = Point(
+                x=trans.transform.translation.x,
+                y=trans.transform.translation.y,
+                z=trans.transform.translation.z
+            )
+            pose.orientation = Quaternion(
+                x=trans.transform.rotation.x,
+                y=trans.transform.rotation.y,
+                z=trans.transform.rotation.z,
+                w=trans.transform.rotation.w
+            )
+            #self.get_logger().warn(f"Pose: {pose}")
+            return pose
+        except tf2_ros.LookupException as e:
+            self.get_logger().warn(f"Could not find transform for AprilTag pose: {e}")
+            return None
+    
+    def tag_callback_lite(self, msg):
+        """Process AprilTag detections."""
+        for detection in msg.detections:
+            if detection.id == self.target_tag_id:
+                #self.get_logger().warn(f"Received apriltag detection: {detection}")
+                self.tag_detected = True
+                self.last_detection_time = self.get_clock().now()
+
+                camera_frame = msg.header.frame_id
+                # Ensure frame_id is not empty; fallback to optical frame
+                if not camera_frame:
+                    camera_frame = self.optical_frame_id
+               
+                # Get tag pose in camera frame
+                tag_pose = self.get_pose(camera_frame)
+                if tag_pose is None:
+                    return
+
+                try:
+                    # Lookup the transform from camera to odom
+                    trans = self.tf_buffer.lookup_transform(
+                        self.odom_frame_id,  # Target frame (odom)
+                        camera_frame,  # Source frame (camera)
+                        rclpy.time.Time(),  # Use the latest transform
+                        rclpy.duration.Duration(seconds=1.0)  # Allow slight extrapolation
+                    )
+
+                    # Transform detected tag position to odom frame
+                    tag_pose_odom = do_transform_pose(tag_pose, trans)
+
+                    # Extract position
+                    tag_x_odom = tag_pose_odom.position.x
+                    tag_y_odom = tag_pose_odom.position.y
+                    tag_z_odom = tag_pose_odom.position.z
+
+                    # Store transformed position in odom frame
+                    self.tag_in_odom_frame = np.array([tag_x_odom, tag_y_odom, tag_z_odom])
+
+                    # Extract quaternion and convert to yaw
+                    q = tag_pose_odom.orientation
+                    self.tag_orientation_in_odom = math.atan2(
+                        2.0 * (q.w * q.z + q.x * q.y),
+                        1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+                    )
+
+                    # Publish the transform to TF
+                    self.publish_tag_transform()
+
+                    self.position_locked = False
+
+                except tf2_ros.LookupException as e:
+                    self.get_logger().warn(f"TF Lookup failed: {e}")
+
+                except tf2_ros.ExtrapolationException as e:
+                    self.get_logger().warn(f"TF Extrapolation failed: {e}")
+
+                except tf2_ros.ConnectivityException as e:
+                    self.get_logger().warn(f"TF Connectivity failed: {e}")
 
     def tag_callback(self, msg):
         """Process AprilTag detections."""
         for detection in msg.detections:
             if detection.id == self.target_tag_id:
-                self.get_logger().warn(f"Received apriltag detection: {detection}")
                 self.tag_detected = True
                 self.last_detection_time = self.get_clock().now()
 
@@ -456,7 +549,7 @@ class AprilTagController(Node):
             cmd.linear.x = 0.0
             cmd.linear.y = 0.0
             cmd.angular.z = 0.8  # Rotate slowly to search for tag
-            self.cmd_vel_pub.publish(cmd)
+            #self.cmd_vel_pub.publish(cmd)
             self.get_logger().info('No tag detected, searching... (rotating)')
         else:  # Pause for 1.5 seconds
             # Stop and wait to allow for detection
