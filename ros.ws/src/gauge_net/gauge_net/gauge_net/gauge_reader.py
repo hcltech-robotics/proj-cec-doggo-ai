@@ -18,6 +18,7 @@ import torch
 import torchvision.transforms as transforms
 
 
+
 class GaugeReaderNode(Node):
 
     def __init__(self):
@@ -33,7 +34,7 @@ class GaugeReaderNode(Node):
             namespace=self._namespace,
             parameters=[
                 ('use_math', True),
-                ('image_topic', '/apriltag/image_rect'),
+                ('image_topic', '/camera/image_raw'),
                 ('detector_model_file', ''),
                 ('reader_model_file', ''),
                 ('min_gauge_score', 0.99),
@@ -52,6 +53,8 @@ class GaugeReaderNode(Node):
         self._image_topic = (
             self.get_parameter(f'{self._node_name}.image_topic').get_parameter_value().string_value
         )
+
+        self.get_logger().info(f'Image Topic: {self._image_topic}')
         self._min_gauge_score = (
             self.get_parameter(f'{self._node_name}.min_gauge_score')
             .get_parameter_value()
@@ -91,8 +94,14 @@ class GaugeReaderNode(Node):
             raise FileNotFoundError(f'Missing reader model: {reader_model_path}')
 
         # Load the detector model.
-        self._detector_model = torch.jit.load(detector_model_path, map_location=self._device)
+        import torchvision
+        from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+        self._detector_model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(num_classes = 3)
+        in_features = self._detector_model.roi_heads.box_predictor.cls_score.in_features
+        self._detector_model.roi_heads.box_predictor = FastRCNNPredictor(in_features, 3)
+        self._detector_model.load_state_dict(torch.load(detector_model_path, map_location=self._device, weights_only=True))
         self._detector_model.eval()
+        self._detector_model.to(self._device)
 
         # Load the reader model.
         if not self._use_math_reading:
@@ -204,10 +213,12 @@ class GaugeReaderNode(Node):
         with torch.no_grad():
             detections = self._detector_model([image_tensor])
 
+        self.get_logger().info(f'Detections: {detections}')
+
         # Extract detections, boxes, and scores
-        boxes = detections[1][0]['boxes']
-        scores = detections[1][0]['scores']
-        labels = detections[1][0]['labels']
+        boxes = detections[0]['boxes']
+        scores = detections[0]['scores']
+        labels = detections[0]['labels']
 
         best_detection = {
             'gauge': {'bbox': None, 'score': 0.0},

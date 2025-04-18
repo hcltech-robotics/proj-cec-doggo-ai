@@ -1,0 +1,7 @@
+CONFIG_IMAGE_KEY=ros2_humble.realsense.go2
+
+INSTALL_DEBIANS_CSV="ros-${ROS_DISTRO}-rmw-cyclonedds-cpp,ros-${ROS_DISTRO}-cyclonedds,nlohmann-json3-dev,ros-${ROS_DISTRO}-foxglove-bridge,ros-${ROS_DISTRO}-isaac-ros-apriltag,ros-${ROS_DISTRO}-rosidl-generator-dds-idl,ros-${ROS_DISTRO}-image-transport,ros-${ROS_DISTRO}-compressed-image-transport"
+
+DOCKER_ARGS=(
+  "-v /home/jetson/.bash_history:/home/admin/.bash_history"
+)
