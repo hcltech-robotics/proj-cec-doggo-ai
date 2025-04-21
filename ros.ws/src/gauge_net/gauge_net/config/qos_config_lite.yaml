@@ -1,5 +1,5 @@
-/gauge_reader_lite:
-  gauge_reader_lite:
+/gauge_reader:
+  gauge_reader:
     ros__parameters:
       qos_overrides:
         /gauge_reading:

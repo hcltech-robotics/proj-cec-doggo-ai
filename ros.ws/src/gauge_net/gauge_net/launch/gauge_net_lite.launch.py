@@ -52,7 +52,7 @@ def generate_launch_description():
         launch_ros.actions.Node(
             package=package_name,
             executable='gauge_reader_lite',
-            name='gauge_reader_lite',
+            name='gauge_reader',
             parameters=[
                 {
                     'model_server_url': model_server_url,

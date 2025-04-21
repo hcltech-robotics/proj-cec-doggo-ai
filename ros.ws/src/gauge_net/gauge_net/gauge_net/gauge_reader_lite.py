@@ -24,8 +24,8 @@ from .gauge_reader import GaugeReaderNode as ParentGaugeReaderNode
 class GaugeReaderNode(ParentGaugeReaderNode):
 
     def __init__(self):
-        self._namespace = 'gauge_reader_lite'
-        self._node_name = 'gauge_reader_lite'
+        self._namespace = 'gauge_reader'
+        self._node_name = 'gauge_reader'
         Node.__init__(self, self._node_name, namespace=self._namespace)
 
         # Use the GPU if available.
@@ -100,6 +100,19 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             reliability=RELIABILITY_MAP.get(image_reliability, ReliabilityPolicy.RELIABLE),
             history=HISTORY_MAP.get(image_history, HistoryPolicy.KEEP_LAST),
             depth=image_depth,
+        )
+
+        self._detector_transform = transforms.Compose(
+            [
+                transforms.ToPILImage(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+
+        # Image processing pipeline for the reader.
+        self._reader_transform = transforms.Compose(
+            [custom_transform.CLAHEPreprocess(), custom_transform.ResizeWithPaddingAndBBox()]
         )
 
         # Subscribers and Publishers:
