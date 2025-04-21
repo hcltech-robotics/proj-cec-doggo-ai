@@ -34,7 +34,7 @@ class GaugeReaderNode(Node):
             namespace=self._namespace,
             parameters=[
                 ('use_math', True),
-                ('image_topic', '/camera/image_raw'),
+                ('image_topic', '/apriltag/image_rect'),
                 ('detector_model_file', ''),
                 ('reader_model_file', ''),
                 ('min_gauge_score', 0.99),
