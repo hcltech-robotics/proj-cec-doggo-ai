@@ -13,8 +13,8 @@ def generate_launch_description():
     package_share_dir = get_package_share_directory(package_name)
 
     # Define default paths for model weights inside the installed package
-    default_gauge_detector_weights = os.path.join(package_share_dir, 'models', 'gauge_detect.pth')
-    default_gauge_reader_weights = os.path.join(package_share_dir, 'models', 'gauge_reader.pt')
+    model_server_url = 'http://localhost:5000'
+    token = 'doggodoggo'
 
     # Create launch description
     ld = launch.LaunchDescription()
@@ -22,28 +22,28 @@ def generate_launch_description():
     # Declare launch arguments with proper defaults
     ld.add_action(
         launch.actions.DeclareLaunchArgument(
-            'gauge_detector_weights',
-            description='Path to weights for gauge_detector',
-            default_value=default_gauge_detector_weights,
+            'model_server_url',
+            description='Model server URL',
+            default_value=model_server_url,
         )
     )
 
     ld.add_action(
         launch.actions.DeclareLaunchArgument(
-            'gauge_reader_weights',
-            description='Path to weights for gauge_reader',
-            default_value=default_gauge_reader_weights,
+            'token',
+            description='Access token for the model server',
+            default_value=token,
         )
     )
 
     # Create LaunchConfigurations
-    gauge_detector_weights = LaunchConfiguration('gauge_detector_weights')
-    gauge_reader_weights = LaunchConfiguration('gauge_reader_weights')
+    model_server_url = LaunchConfiguration('model_server_url')
+    token = LaunchConfiguration('token')
 
     # QoS configuration file
-    qos_config = os.path.join(package_share_dir, 'config', 'qos_config.yaml')
+    qos_config = os.path.join(package_share_dir, 'config', 'qos_config_lite.yaml')
     # Parameters configuration file
-    param_config = os.path.join(package_share_dir, 'config', 'config.yaml')
+    param_config = os.path.join(package_share_dir, 'config', 'config_lite.yaml')
 
     print(param_config)
 
@@ -51,12 +51,12 @@ def generate_launch_description():
     ld.add_action(
         launch_ros.actions.Node(
             package=package_name,
-            executable='gauge_reader',
+            executable='gauge_reader_lite',
             name='gauge_reader',
             parameters=[
                 {
-                    'detector_model_file': gauge_detector_weights,
-                    'reader_model_file': gauge_reader_weights,
+                    'model_server_url': model_server_url,
+                    'token': token,
                 },
                 qos_config,
                 param_config,

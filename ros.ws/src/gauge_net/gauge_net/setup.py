@@ -12,7 +12,8 @@ setup(
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/gauge_net.launch.py']),
-        ('share/' + package_name + '/config', ['config/qos_config.yaml', 'config/config.yaml']),
+        ('share/' + package_name + '/launch', ['launch/gauge_net_lite.launch.py']),
+        ('share/' + package_name + '/config', glob.glob('config/*')),
         ('share/' + package_name + '/models', glob.glob('models/*')),
     ],
     install_requires=['setuptools'],
@@ -22,5 +23,5 @@ setup(
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
-    entry_points={'console_scripts': ['gauge_reader = gauge_net.gauge_reader:main']},
+    entry_points={'console_scripts': ['gauge_reader = gauge_net.gauge_reader:main', 'gauge_reader_lite = gauge_net.gauge_reader_lite:main']},
 )
