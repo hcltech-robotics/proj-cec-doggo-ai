@@ -21,10 +21,9 @@ WORKDIR /ros2_ws
 
 # Clone the repository with submodules
 COPY requirements.txt /ros2_ws/src/requirements.txt
-RUN pip install 'numpy<2.0.0'
-
-# Install Python requirements (with numpy constraint)
 RUN cd src && pip install -r requirements.txt
+COPY go2_ros2_sdk/requirements.txt /ros2_ws/src/go2_ros2_sdk/requirements.txt
+RUN cd src && pip install -r go2_ros2_sdk/requirements.txt
 
 # Copy rest of the source code
 COPY . /ros2_ws/src

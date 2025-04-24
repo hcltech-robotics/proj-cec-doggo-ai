@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
     command:  ["ros2", "launch", "gauge_net", "gauge_net_lite.launch.py", "model_server_url:=${MODEL_SERVER_URL}", "token:=${TOKEN}"]
   webrtc:
-    image: go2_ros_sdk:latest
+    image: robot-base:latest
     environment:
       - ROBOT_IP=${ROBOT_IP} 
       - CONN_TYPE=${CONN_TYPE:-webrtc}
