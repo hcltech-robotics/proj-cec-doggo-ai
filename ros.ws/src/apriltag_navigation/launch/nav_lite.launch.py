@@ -34,14 +34,14 @@ def generate_launch_description():
         package_dir, 'config', 'lite_apriltag_controller_params.yaml')
     
 
-    rectify_node = ComposableNode(
-        package='image_proc',
-        plugin='image_proc::RectifyNode',
-        name='rectify',
-        namespace='apriltag',
-        remappings=[('image', '/camera/image_raw'),
-                    ('camera_info', '/camera/camera_info')],
-    )
+    # rectify_node = ComposableNode(
+    #     package='image_proc',
+    #     plugin='image_proc::RectifyNode',
+    #     name='rectify',
+    #     namespace='apriltag',
+    #     remappings=[('image', '/camera/image_raw'),
+    #                 ('camera_info', '/camera/camera_info')],
+    # )
 
     apriltag_node = ComposableNode(
         package='apriltag_ros',
@@ -50,10 +50,10 @@ def generate_launch_description():
         namespace='apriltag',
         parameters=[{
             'family': '36h11',
-            'size': 0.0766,
+            'size': 0.08,
         }],
         remappings=[
-            ('image_rect', '/apriltag/image_rect'),
+            ('image_rect', '/camera/image_raw'),
             ('camera_info', '/camera/camera_info'),
             ('tf', '/tf')
         ],
@@ -92,7 +92,7 @@ def generate_launch_description():
         namespace='',
         executable='component_container_mt',
         composable_node_descriptions=[
-            rectify_node,
+            # rectify_node,
             # resize_node,
             apriltag_node,
         ],
@@ -101,4 +101,3 @@ def generate_launch_description():
     )
 
     return launch.LaunchDescription([apriltag_container, controller_node])
-    #return launch.LaunchDescription([apriltag_container])

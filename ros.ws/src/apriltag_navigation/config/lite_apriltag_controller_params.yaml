@@ -1,7 +1,7 @@
 apriltag_controller:
   ros__parameters:
     target_tag_id: 0
-    desired_distance: 0.7           # meters in front of tag
+    desired_distance: 0.4           # meters in front of tag
     desired_y_offset: 0.0           # meters left/right from center
     desired_yaw: 0.0                # radians, desired final yaw relative to tag
     position_threshold: 0.25        # meters, position lock tolerance

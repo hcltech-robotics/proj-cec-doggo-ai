@@ -2,6 +2,7 @@
 
 import math
 import os
+import threading
 
 import cv2
 from cv_bridge import CvBridge
@@ -27,13 +28,17 @@ class GaugeReaderNode(Node):
 
         # Use the GPU if available.
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.get_logger().info(f'Using device: {self._device}')
+        # Set up the core number for torch optimization.
+        torch.set_num_threads(4)
+        cv2.setNumThreads(4)
 
         # Declare and get node parameters.
         self.declare_parameters(
             namespace=self._namespace,
             parameters=[
                 ('use_math', True),
-                ('image_topic', '/apriltag/image_rect'),
+                ('image_topic', '/camera/image_raw'),
                 ('detector_model_file', ''),
                 ('reader_model_file', ''),
                 ('min_gauge_score', 0.99),
@@ -45,6 +50,7 @@ class GaugeReaderNode(Node):
                 ('image_stream.depth', rclpy.Parameter.Type.INTEGER),
             ],
         )
+        
 
         self._use_math_reading = (
             self.get_parameter(f'{self._node_name}.use_math').get_parameter_value().bool_value
@@ -81,6 +87,14 @@ class GaugeReaderNode(Node):
         image_reliability = self.get_parameter(f'{self._node_name}.image_stream.reliability').value
         image_history = self.get_parameter(f'{self._node_name}.image_stream.history').value
         image_depth = self.get_parameter(f'{self._node_name}.image_stream.depth').value
+        
+        self.get_logger().info(f'Using image topic: {self._image_topic}')
+        self.get_logger().info(f'Using detector model: {detector_model_path}')
+        self.get_logger().info(f'Using reader model: {reader_model_path}')
+        self.get_logger().info(f'Using math reading: {self._use_math_reading}')
+        self.get_logger().info(f'Min gauge score: {self._min_gauge_score}')
+        self.get_logger().info(f'Min needle score: {self._min_needle_score}')
+        self.get_logger().info(f'Scaling range: [{self._scaling_min}, {self._scaling_max}]')
 
         if not os.path.isfile(detector_model_path):
             self.get_logger().error(f'Detector model file not found: {detector_model_path}')
@@ -135,7 +149,7 @@ class GaugeReaderNode(Node):
         #   - and the gauge reading.
         try:
             self._image_sub = self.create_subscription(
-                Image, self._image_topic, self.image_callback, qos_profile=image_qos_profile
+                Image, self._image_topic, self.image_callback_to_buffer, qos_profile=image_qos_profile
             )
         except Exception as e:
             self.get_logger().error(f'Failed to create image subscriber: {e}')
@@ -170,8 +184,16 @@ class GaugeReaderNode(Node):
 
         # cv_bridge for image conversion.
         self._bridge = CvBridge()
+        
+        self._image_buffer = None
+        self._inference_running = False
 
         self.get_logger().info('GaugeReader Node Started')
+        
+    def image_callback_to_buffer(self, msg):
+        self._image_buffer = msg
+
+
 
     def set_image_process_mode_callback(
         self, request: GaugeProcess.Request, response: GaugeProcess.Response
@@ -194,6 +216,22 @@ class GaugeReaderNode(Node):
             self.get_logger().warning(f'Invalid process mode: {request.process_mode}')
             response.success = False
             response.info = f'Invalid process mode ({request.process_mode})'
+            
+        if self._image_buffer is not None and self._process_mode == GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE:
+            if self._inference_running:
+                self.get_logger().warning('Inference already running, skipping processing.')
+                response.info += ' - Inference already running, skipping processing.'
+                return response
+            self._inference_running = True
+            self.get_logger().info('Processing the buffered image.')
+            # Process the buffered image.
+            image_to_process = self._image_buffer
+            threading.Thread(
+                target=self.image_callback, args=(image_to_process,), daemon=True
+            ).start() 
+            self._image_buffer = None
+        else:
+            self.get_logger().info('No image to process')
 
         return response
 
@@ -406,14 +444,17 @@ class GaugeReaderNode(Node):
         # Do some checks on the detection results
         if detection_result['gauge']['score'] < self._min_gauge_score:
             self.get_logger().warning('Skipping observation: missing valid gauge detection.')
+            self._inference_running = False
             return
         if detection_result['needle']['score'] < self._min_needle_score:
             self.get_logger().warning('Skipping observation: missing valid needle detection.')
+            self._inference_running = False
             return
         if not self._needle_in_gauge(
             detection_result['gauge']['bbox'], detection_result['needle']['bbox']
         ):
             self.get_logger().warning('Skipping observation: needle not in gauge.')
+            self._inference_running = False
             return
         header = msg.header
         cropped_gauge, needle_bbox = self._crop_gauge(cv_image, detection_result)
@@ -441,6 +482,7 @@ class GaugeReaderNode(Node):
 
         # Publish the gauge reading
         self._publish_gauge_reading(gauge_reading, header)
+        self._inference_running = False
 
 
 def main(args=None):
