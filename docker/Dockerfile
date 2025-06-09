@@ -3,17 +3,8 @@ FROM ros:humble-ros-base
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /ros_ws
 
-RUN rm -f /usr/share/keyrings/ros-archive-keyring.gpg \
-    && rm -f /etc/apt/sources.list.d/ros2-latest.list
-
 # Install necessary tools
 RUN apt-get update && apt-get install -y curl gnupg2 lsb-release
-
-# Install the new ROS 2 apt source package
-RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | \
-    gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
-    > /etc/apt/sources.list.d/ros2-latest.list
 
 # Now install pre-reqs and your packages
 RUN apt-get update && apt-get install -y \
