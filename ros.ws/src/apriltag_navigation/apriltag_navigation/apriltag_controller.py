@@ -454,11 +454,13 @@ class AprilTagController(Node):
                     z_local    # Up/down (Z in robot frame)
                 ])
 
-                # Calculate relative orientation difference
-                rel_orientation = self.tag_orientation_in_odom - robot_yaw
-
-                # Apply -π/2 correction
-                rel_orientation += np.pi / 2  # Shift by 90 degrees
+                # Calculate the angle the robot needs to turn to face the tag
+                # This is the angle from robot's current heading to the direction of the tag
+                angle_to_tag = math.atan2(y_local, x_local)
+                
+                # The relative orientation is simply this angle
+                # No need for complex corrections - just the angle to turn toward the tag
+                rel_orientation = angle_to_tag
 
                 # Normalize to [-pi, pi]
                 rel_orientation = (rel_orientation + np.pi) % (2 * np.pi) - np.pi
@@ -469,6 +471,7 @@ class AprilTagController(Node):
                 return None, None, None
 
         return None, None, None
+
 
     def control_loop(self):
         """Main control loop for navigating toward the tag."""
@@ -489,13 +492,13 @@ class AprilTagController(Node):
                 self.execute_search_behavior()
                 return
 
-            # X distance error (forward/backward)
-            x_distance_error = rel_position[0] - self.get_parameter('desired_distance').value
+            # X distance error (we want to be at the target position, so error should be minimal)
+            x_distance_error = rel_position[0]  # Distance to desired position
 
-            # Y offset error (left/right)
-            y_distance_error = rel_position[1] - self.get_parameter('desired_y_offset').value
+            # Y offset error (left/right from desired position)
+            y_distance_error = rel_position[1] + self.get_parameter('desired_y_offset').value
 
-            # Angle error (orientation difference between robot and tag)
+            # Angle error - this is now the angle to turn toward the tag
             yaw_error = angle_to_tag - self.get_parameter('desired_yaw').value
 
             # Normalize yaw_error to [-pi, pi]
@@ -504,10 +507,11 @@ class AprilTagController(Node):
             while yaw_error < -math.pi:
                 yaw_error += 2 * math.pi
 
-            # Check if we've reached the target position
-            if (abs(x_distance_error) < self.position_threshold and
-                    abs(y_distance_error) < self.position_threshold and
-                    abs(yaw_error) < self.angle_threshold):
+            # Check if we've reached the target position with tighter thresholds
+            angle_tolerance = math.radians(8)  # 3 degree tolerance for angle
+            
+            if (abs(x_distance_error) < self.get_parameter('desired_distance').value and
+                    abs(yaw_error) < angle_tolerance):
 
                 if not self.position_locked:
                     self.position_locked = True
@@ -527,24 +531,43 @@ class AprilTagController(Node):
                 return
 
             # Position not locked yet, continue with PID control for 3-DOF
+            # Use slower, more precise movements for better alignment
             linear_x_vel = self.linear_x_pid.compute(x_distance_error, 1.0 / 10.0)
             linear_y_vel = self.linear_y_pid.compute(y_distance_error, 1.0 / 10.0)
-            angular_vel = self.angular_pid.compute(yaw_error, 1.0 / 10.0) / 10.0
+            angular_vel = self.angular_pid.compute(yaw_error, 1.0 / 10.0)
+            
+            # Limit maximum velocities for more precise control
+            max_linear_vel = 0.3  # m/s
+            max_angular_vel = 0.5  # rad/s
+            
+            linear_x_vel = max(-max_linear_vel, min(max_linear_vel, linear_x_vel))
+            linear_y_vel = max(-max_linear_vel, min(max_linear_vel, linear_y_vel))
+            angular_vel = max(-max_angular_vel, min(max_angular_vel, angular_vel))
 
             # Create and publish velocity command
             cmd = Twist()
             cmd.linear.x = linear_x_vel
             cmd.linear.y = linear_y_vel
 
-            if abs(yaw_error) < self.angle_threshold:
-                cmd.angular.z = 0.0
-            elif abs(x_distance_error) < 1.0:
+            # Always apply angular correction, but prioritize it for large errors
+            if abs(yaw_error) > angle_tolerance:
                 cmd.angular.z = angular_vel
+                # Reduce linear movement if angle is significantly off
+                if abs(yaw_error) > math.radians(15):  # 15 degree threshold
+                    cmd.linear.x *= 0.3  # Significantly reduce linear movement
+                    cmd.linear.y *= 0.3
+            else:
+                cmd.angular.z = 0.0
+                
+            # For very small errors, use even more precise movements
+            if abs(x_distance_error) < 0.15 and abs(y_distance_error) < 0.15:
+                cmd.linear.x *= 0.5  # Halve the speed for fine adjustments
+                cmd.linear.y *= 0.5
 
             self.cmd_vel_pub.publish(cmd)
 
             debug_msg = f'Distance X: {x_distance_error:.2f}m, Y: {y_distance_error:.2f}m, '
-            debug_msg += f'Angle: {yaw_error:.2f}rad, Commands: x={linear_x_vel:.2f}, '
+            debug_msg += f'Angle: {math.degrees(yaw_error):.1f}°, Commands: x={linear_x_vel:.2f}, '
             debug_msg += f'y={linear_y_vel:.2f}, angular={angular_vel:.2f}'
             self.get_logger().info(debug_msg)
         else:
