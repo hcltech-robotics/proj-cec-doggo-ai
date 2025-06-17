@@ -108,6 +108,9 @@ class AprilTagController(Node):
         # Create service
         self.srv = self.create_service(Trigger, 'apriltag_controller/trigger', self.start_control)
         self.navigate = False
+        
+        self.stop_srv = self.create_service(
+            Trigger, 'apriltag_controller/stop', self.stop_control)
 
         self.gauge_reader = self.create_client(
             GaugeProcess, '/gauge_reader/set_image_process_mode')
@@ -168,6 +171,22 @@ class AprilTagController(Node):
         )
 
         self.get_logger().info('Simplified AprilTag Controller initialized with odom tracking')
+        
+    def stop_control(self, request, response):
+        """Stop the navigation control loop."""
+
+        self.get_logger().info('Stopping navigation control loop...')
+
+        self.navigate = False
+        self.position_locked = False
+        response.success = True
+        response.message = 'Navigation control loop stopped'
+        
+        # Stop the robot immediately
+        stop_cmd = Twist()
+        self.cmd_vel_pub.publish(stop_cmd)
+
+        return response
 
     def start_control(self, request, response):
         """Start the navigation control loop."""
