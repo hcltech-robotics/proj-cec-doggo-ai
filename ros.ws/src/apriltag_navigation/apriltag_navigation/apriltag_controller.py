@@ -5,8 +5,10 @@ import math
 from geometry_msgs.msg import PoseStamped, TransformStamped, Twist
 
 from nav_msgs.msg import Odometry
+from nav2_msgs.action import NavigateToPose
 import numpy as np
 import rclpy
+from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_srvs.srv import Trigger
@@ -17,57 +19,13 @@ import tf2_ros
 from gauge_net_interface.srv import GaugeProcess
 from geometry_msgs.msg import Pose, Point, Quaternion
 
-class PIDController:
-    def __init__(self, kp=0.0, ki=0.0, kd=0.0, max_output=1.0):
-        self.kp = kp
-        self.ki = ki
-        self.kd = kd
-        self.max_output = max_output
-        self.previous_error = 0.0
-        self.integral = 0.0
-        self.integral_limit = 1.0
-
-    def compute(self, error, dt):
-        """Compute PID control output."""
-        # P term
-        p_term = self.kp * error
-
-        # I term (with anti-windup)
-        self.integral += error * dt
-        if self.integral > self.integral_limit:
-            self.integral = self.integral_limit
-        elif self.integral < -self.integral_limit:
-            self.integral = -self.integral_limit
-        i_term = self.ki * self.integral
-
-        # D term
-        d_term = 0.0
-        if dt > 0:
-            d_term = self.kd * (error - self.previous_error) / dt
-        self.previous_error = error
-
-        # Calculate total control output with limiting
-        output = p_term + i_term + d_term
-        if output > self.max_output:
-            output = self.max_output
-        elif output < -self.max_output:
-            output = -self.max_output
-
-        return output
-
-    def reset(self):
-        """Reset the controller state."""
-        self.previous_error = 0.0
-        self.integral = 0.0
-
-
 class AprilTagController(Node):
     def __init__(self):
         super().__init__('apriltag_controller')
 
         # Parameters
         self.declare_parameter('target_tag_id', 0)
-        self.declare_parameter('desired_distance', 0.7)  # meters
+        self.declare_parameter('desired_distance', 1)  # meters
         self.declare_parameter('desired_y_offset', 0.0)  # meters
         self.declare_parameter('desired_yaw', 0.0)  # radians (0 = directly facing tag)
         self.declare_parameter('position_threshold', 0.25)  # meters
@@ -80,10 +38,6 @@ class AprilTagController(Node):
 
         self.use_isaac_apriltag = self.get_parameter('use_isaac_apriltag').get_parameter_value().bool_value
 
-        # PID controllers for 3-DOF control
-        self.linear_x_pid = PIDController(kp=0.6, ki=0.1, kd=0.1, max_output=0.2)
-        self.linear_y_pid = PIDController(kp=0.6, ki=0.1, kd=0.1, max_output=0.2)
-        self.angular_pid = PIDController(kp=1.2, ki=0.1, kd=0.15, max_output=1.0)
 
         # Create publisher for robot velocity commands
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -167,6 +121,17 @@ class AprilTagController(Node):
             tag_qos
         )
 
+        self.nav_client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
+        self.nav_goal_handle = None
+        self.nav_active = False
+        self.desired_distance = self.get_parameter('desired_distance').value
+        self.desired_y_offset = self.get_parameter('desired_y_offset').value
+        self.desired_yaw = self.get_parameter('desired_yaw').value
+
+        self.target_frame_id = "target"     
+        self.current_target_pose = None     
+
+
         self.get_logger().info('Simplified AprilTag Controller initialized with odom tracking')
 
     def start_control(self, request, response):
@@ -190,6 +155,33 @@ class AprilTagController(Node):
         # If we have a tag detected and stored in odom frame, update the TF
         if self.tag_in_odom_frame is not None:
             self.publish_tag_transform()
+            goal = self.build_approach_goal_pose_in_odom(
+                dx=self.desired_distance, dy=self.desired_y_offset, yaw_align=True
+            )
+            if goal:
+                self.current_target_pose = goal
+                self.publish_target_transform()
+
+    def publish_target_transform(self):
+        """Publish odom -> target for the currently active goal."""
+        if self.current_target_pose is None:
+            return
+
+        goal = self.current_target_pose
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = self.odom_frame_id
+        t.child_frame_id = self.target_frame_id
+
+        # position
+        t.transform.translation.x = goal.pose.position.x
+        t.transform.translation.y = goal.pose.position.y
+        t.transform.translation.z = goal.pose.position.z
+
+        # orientation (use the goal’s quaternion)
+        t.transform.rotation = goal.pose.orientation
+
+        self.tf_broadcaster.sendTransform(t)
 
     def publish_tag_transform(self):
         """Publish the transform from odom to tag."""
@@ -255,6 +247,90 @@ class AprilTagController(Node):
         All our main visualization is now handled directly in publish_tag_transform().
         """
         pass
+
+    def build_approach_goal_pose_in_odom(self, dx=0.6, dy=0.0, yaw_align=True):
+        """
+        Build a goal in odom that is dx meters in front of the TAG (along the line
+        from robot -> tag), with optional lateral offset dy (to the robot's left
+        if dy>0). Yaw faces the tag, independent of the tag's internal axes.
+        """
+        if self.tag_in_odom_frame is None or self.last_odom_pose is None:
+            return None
+
+        # Positions in odom
+        tx, ty, tz = self.tag_in_odom_frame
+        rx = self.last_odom_pose.position.x
+        ry = self.last_odom_pose.position.y
+
+        # Direction from robot to tag (unit vector)
+        yaw_face = math.atan2(ty - ry, tx - rx)   # heading that looks at the tag
+        ux = math.cos(yaw_face)
+        uy = math.sin(yaw_face)
+
+        # Perpendicular to the left of heading
+        px = -uy
+        py =  ux
+
+        # Place goal: start at tag, step back by dx along heading toward robot,
+        # then slide by dy to the left/right
+        gx = tx - dx * ux + dy * px
+        gy = ty - dx * uy + dy * py
+
+        # Orientation: face the tag (goal's x+ points toward tag)
+        gyaw = yaw_face if yaw_align else 0.0
+        cy = math.cos(gyaw * 0.5)
+        sy = math.sin(gyaw * 0.5)
+
+        goal = PoseStamped()
+        goal.header.stamp = self.get_clock().now().to_msg()
+        goal.header.frame_id = self.odom_frame_id
+        goal.pose.position = Point(x=gx, y=gy, z=0.0)
+        goal.pose.orientation = Quaternion(x=0.0, y=0.0, z=sy, w=cy)
+        return goal
+    
+    def send_nav2_goal(self, goal_pose: PoseStamped):
+        if not self.nav_client.wait_for_server(timeout_sec=2.0):
+            self.get_logger().error("NavigateToPose action server not available")
+            return
+
+        goal = NavigateToPose.Goal()
+        goal.pose = goal_pose
+
+        self.get_logger().info(
+            f"Sending Nav2 goal in {goal_pose.header.frame_id}: "
+            f"x={goal_pose.pose.position.x:.2f}, y={goal_pose.pose.position.y:.2f}"
+        )
+
+        self.nav_active = True
+        send_future = self.nav_client.send_goal_async(goal)
+        send_future.add_done_callback(self._on_goal_response)
+    
+    def _on_goal_response(self, future):
+        self.nav_goal_handle = future.result()
+        if not self.nav_goal_handle.accepted:
+            self.get_logger().warn("Nav2 goal rejected")
+            self.nav_active = False
+            return
+        self.get_logger().info("Nav2 goal accepted")
+        result_future = self.nav_goal_handle.get_result_async()
+        result_future.add_done_callback(self._on_nav_result)
+
+    def _on_nav_result(self, future):
+        self.nav_active = False
+        result = future.result().result
+        status = future.result().status
+        self.get_logger().info(f"Nav2 result status: {status}")
+
+        if status == 4:  # SUCCEEDED
+            self._finish_and_call_gauge()
+        else:
+            # Let recoveries happen in BT; you could retry here if desired
+            self.get_logger().warn("Nav2 failed; you can implement retry/backoff here")
+
+    def _finish_and_call_gauge(self):
+        self.get_logger().info("Target position reached (Nav2).")
+        self.navigate = False
+        self.call_gauge_read()
     
     def get_pose(self, camera_frame_id):
         #Look up the pose from the tf buffer
@@ -283,65 +359,6 @@ class AprilTagController(Node):
         except tf2_ros.LookupException as e:
             self.get_logger().warn(f"Could not find transform for AprilTag pose: {e}")
             return None
-    
-    def tag_callback_lite(self, msg):
-        """Process AprilTag detections."""
-        for detection in msg.detections:
-            if detection.id == self.target_tag_id:
-                #self.get_logger().warn(f"Received apriltag detection: {detection}")
-                self.tag_detected = True
-                self.last_detection_time = self.get_clock().now()
-
-                camera_frame = msg.header.frame_id
-                # Ensure frame_id is not empty; fallback to optical frame
-                if not camera_frame:
-                    camera_frame = self.optical_frame_id
-               
-                # Get tag pose in camera frame
-                tag_pose = self.get_pose(camera_frame)
-                if tag_pose is None:
-                    return
-
-                try:
-                    # Lookup the transform from camera to odom
-                    trans = self.tf_buffer.lookup_transform(
-                        self.odom_frame_id,  # Target frame (odom)
-                        camera_frame,  # Source frame (camera)
-                        rclpy.time.Time(),  # Use the latest transform
-                        rclpy.duration.Duration(seconds=1.0)  # Allow slight extrapolation
-                    )
-
-                    # Transform detected tag position to odom frame
-                    tag_pose_odom = do_transform_pose(tag_pose, trans)
-
-                    # Extract position
-                    tag_x_odom = tag_pose_odom.position.x
-                    tag_y_odom = tag_pose_odom.position.y
-                    tag_z_odom = tag_pose_odom.position.z
-
-                    # Store transformed position in odom frame
-                    self.tag_in_odom_frame = np.array([tag_x_odom, tag_y_odom, tag_z_odom])
-
-                    # Extract quaternion and convert to yaw
-                    q = tag_pose_odom.orientation
-                    self.tag_orientation_in_odom = math.atan2(
-                        2.0 * (q.w * q.z + q.x * q.y),
-                        1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-                    )
-
-                    # Publish the transform to TF
-                    self.publish_tag_transform()
-
-                    self.position_locked = False
-
-                except tf2_ros.LookupException as e:
-                    self.get_logger().warn(f"TF Lookup failed: {e}")
-
-                except tf2_ros.ExtrapolationException as e:
-                    self.get_logger().warn(f"TF Extrapolation failed: {e}")
-
-                except tf2_ros.ConnectivityException as e:
-                    self.get_logger().warn(f"TF Connectivity failed: {e}")
 
     def tag_callback(self, msg):
         """Process AprilTag detections."""
@@ -399,137 +416,30 @@ class AprilTagController(Node):
                 except tf2_ros.ConnectivityException as e:
                     self.get_logger().warn(f"TF Connectivity failed: {e}")
 
-    def get_relative_tag_pose(self):
-        """Get the tag pose relative to the robot's current position."""
-        if self.tag_in_odom_frame is not None and self.last_odom_pose is not None:
-            try:
-                # Get transform from tag to robot in odom frame
-                robot_position = np.array([
-                    self.last_odom_pose.position.x,
-                    self.last_odom_pose.position.y,
-                    self.last_odom_pose.position.z
-                ])
-
-                # Extract robot orientation from quaternion
-                q_robot = self.last_odom_pose.orientation
-                robot_yaw = math.atan2(
-                    2.0 * (q_robot.w * q_robot.z + q_robot.x * q_robot.y),
-                    1.0 - 2.0 * (q_robot.y * q_robot.y + q_robot.z * q_robot.z)
-                )
-
-                # Calculate relative position of tag from robot in odom frame
-                dx = self.tag_in_odom_frame[0] - robot_position[0]
-                dy = self.tag_in_odom_frame[1] - robot_position[1]
-
-                # Rotate the position to robot's local frame
-                cos_yaw = math.cos(-robot_yaw)
-                sin_yaw = math.sin(-robot_yaw)
-
-                x_local = dx * cos_yaw - dy * sin_yaw
-                y_local = dx * sin_yaw + dy * cos_yaw
-                z_local = self.tag_in_odom_frame[2] - robot_position[2]
-
-                rel_position = np.array([
-                    x_local,   # Forward (X in robot frame)
-                    y_local,   # Left/right (Y in robot frame)
-                    z_local    # Up/down (Z in robot frame)
-                ])
-
-                # Calculate relative orientation difference
-                rel_orientation = self.tag_orientation_in_odom - robot_yaw
-
-                # Apply -π/2 correction
-                rel_orientation += np.pi / 2  # Shift by 90 degrees
-
-                # Normalize to [-pi, pi]
-                rel_orientation = (rel_orientation + np.pi) % (2 * np.pi) - np.pi
-
-                return rel_position, self.tag_orientation_in_odom, rel_orientation
-            except Exception as e:
-                self.get_logger().error(f'Error getting relative pose from odom: {e}')
-                return None, None, None
-
-        return None, None, None
 
     def control_loop(self):
-        """Main control loop for navigating toward the tag."""
         if not self.navigate:
             return
 
-        # Check if we've seen the tag recently
+        # Tag freshness (reuse your timeout)
         now = self.get_clock().now()
         time_since_detection = (now - self.last_detection_time).nanoseconds / 1e9
 
-        if (self.tag_detected and time_since_detection <
-                self.tag_timeout) or self.tag_in_odom_frame is not None:
-            # Get tag position relative to robot
-            rel_position, rel_orientation, angle_to_tag = self.get_relative_tag_pose()
+        # If we have a tag pose (directly or cached in odom), try to send a goal if none active
+        if ((self.tag_detected and time_since_detection < self.tag_timeout) or
+            (self.tag_in_odom_frame is not None)):
 
-            if rel_position is None:
-                self.get_logger().warning('Could not determine relative tag position')
-                self.execute_search_behavior()
-                return
-
-            # X distance error (forward/backward)
-            x_distance_error = rel_position[0] - self.get_parameter('desired_distance').value
-
-            # Y offset error (left/right)
-            y_distance_error = rel_position[1] - self.get_parameter('desired_y_offset').value
-
-            # Angle error (orientation difference between robot and tag)
-            yaw_error = angle_to_tag - self.get_parameter('desired_yaw').value
-
-            # Normalize yaw_error to [-pi, pi]
-            while yaw_error > math.pi:
-                yaw_error -= 2 * math.pi
-            while yaw_error < -math.pi:
-                yaw_error += 2 * math.pi
-
-            # Check if we've reached the target position
-            if (abs(x_distance_error) < self.position_threshold and
-                    abs(y_distance_error) < self.position_threshold and
-                    abs(yaw_error) < self.angle_threshold):
-
-                if not self.position_locked:
-                    self.position_locked = True
-                    self.get_logger().info('Position locked!')
-
-                # Stop the robot once position is achieved
-                cmd = Twist()
-                cmd.linear.x = 0.0
-                cmd.linear.y = 0.0
-                cmd.angular.z = 0.0
-                self.cmd_vel_pub.publish(cmd)
-
-                self.navigate = False
-                self.get_logger().info('Target position reached!')
-
-                self.call_gauge_read()
-                return
-
-            # Position not locked yet, continue with PID control for 3-DOF
-            linear_x_vel = self.linear_x_pid.compute(x_distance_error, 1.0 / 10.0)
-            linear_y_vel = self.linear_y_pid.compute(y_distance_error, 1.0 / 10.0)
-            angular_vel = self.angular_pid.compute(yaw_error, 1.0 / 10.0) / 10.0
-
-            # Create and publish velocity command
-            cmd = Twist()
-            cmd.linear.x = linear_x_vel
-            cmd.linear.y = linear_y_vel
-
-            if abs(yaw_error) < self.angle_threshold:
-                cmd.angular.z = 0.0
-            elif abs(x_distance_error) < 1.0:
-                cmd.angular.z = angular_vel
-
-            self.cmd_vel_pub.publish(cmd)
-
-            debug_msg = f'Distance X: {x_distance_error:.2f}m, Y: {y_distance_error:.2f}m, '
-            debug_msg += f'Angle: {yaw_error:.2f}rad, Commands: x={linear_x_vel:.2f}, '
-            debug_msg += f'y={linear_y_vel:.2f}, angular={angular_vel:.2f}'
-            self.get_logger().info(debug_msg)
+            if not self.nav_active and self.nav_goal_handle is None:
+                goal_pose = self.build_approach_goal_pose_in_odom(
+                    dx=self.desired_distance, dy=self.desired_y_offset, yaw_align=True
+                )
+                if goal_pose:
+                    self.send_nav2_goal(goal_pose)
+                else:
+                    self.get_logger().warn("Could not build approach pose yet; waiting...")
         else:
-            self.execute_search_behavior()
+            if not self.nav_active:
+                self.execute_search_behavior()
 
     def execute_search_behavior(self):
         """Execute search behavior when tag is lost."""

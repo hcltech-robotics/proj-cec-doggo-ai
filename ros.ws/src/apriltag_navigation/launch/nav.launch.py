@@ -41,8 +41,8 @@ def generate_launch_description():
             'output_width': 1920,
             'output_height': 1080,
         }],
-        remappings=[('image_raw', '/camera/camera/color/image_raw'),
-                    ('camera_info', '/camera/camera/color/camera_info')]
+        remappings=[('image_raw', '/camera/image_raw'),
+                    ('camera_info', '/camera/camera_info')]
     )
 
     apriltag_node = ComposableNode(

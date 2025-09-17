@@ -1,13 +1,13 @@
 apriltag_controller:
   ros__parameters:
     target_tag_id: 0
-    desired_distance: 0.7           # meters in front of tag
+    desired_distance: 1           # meters in front of tag
     desired_y_offset: 0.0           # meters left/right from center
     desired_yaw: 0.0                # radians, desired final yaw relative to tag
     position_threshold: 0.25        # meters, position lock tolerance
     angle_threshold: 0.25           # radians, yaw lock tolerance
     tag_timeout: 2.0                # seconds before considering tag lost
-    optical_frame_id: camera_color_optical_frame
+    optical_frame_id: front_camera
     base_frame_id: base_link
     odom_frame_id: odom
     use_isaac_apriltag: true        # set false to use non-Isaac AprilTag messages
