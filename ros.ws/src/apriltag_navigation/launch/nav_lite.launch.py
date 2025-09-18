@@ -22,6 +22,7 @@ import launch
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 from launch.substitutions import LaunchConfiguration, Command, EnvironmentVariable
+from launch.actions import DeclareLaunchArgument
 
 
 def generate_launch_description():
@@ -33,14 +34,16 @@ def generate_launch_description():
     config_file = os.path.join(
         package_dir, 'config', 'lite_apriltag_controller_params.yaml')
     
+    image_topic = LaunchConfiguration('image_topic', default='/camera/image_raw')
+    camera_info_topic = LaunchConfiguration('camera_info_topic', default='/camera/camera_info')
 
     rectify_node = ComposableNode(
         package='image_proc',
         plugin='image_proc::RectifyNode',
         name='rectify',
         namespace='apriltag',
-        remappings=[('image', '/camera/image_raw'),
-                    ('camera_info', '/camera/camera_info')],
+        remappings=[('image', image_topic),
+                    ('camera_info', camera_info_topic)],
     )
 
     apriltag_node = ComposableNode(
@@ -54,7 +57,7 @@ def generate_launch_description():
         }],
         remappings=[
             ('image_rect', '/apriltag/image_rect'),
-            ('camera_info', '/camera/camera_info'),
+            ('camera_info', camera_info_topic),
             ('tf', '/tf')
         ],
     )
@@ -100,5 +103,7 @@ def generate_launch_description():
         on_exit=on_exit,
     )
 
-    return launch.LaunchDescription([apriltag_container, controller_node])
+    return launch.LaunchDescription([DeclareLaunchArgument('image_topic', default_value='/camera/image_raw'),
+                                     DeclareLaunchArgument('camera_info_topic', default_value='/camera/camera_info'),
+                                     apriltag_container, controller_node])
     #return launch.LaunchDescription([apriltag_container])

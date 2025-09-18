@@ -12,7 +12,6 @@ def generate_launch_description():
     # Get package share directory
     package_share_dir = get_package_share_directory(package_name)
 
-    # Define default paths for model weights inside the installed package
     model_server_url = 'http://localhost:5000'
     token = 'doggodoggo'
 
@@ -36,16 +35,24 @@ def generate_launch_description():
         )
     )
 
+    ld.add_action(
+        launch.actions.DeclareLaunchArgument(
+            'use_math',
+            description='If set to true, use mathematical approach for reading gauges instead of neural network.',
+            default_value='True',
+        )
+    )
+
     # Create LaunchConfigurations
     model_server_url = LaunchConfiguration('model_server_url')
     token = LaunchConfiguration('token')
+    use_math = LaunchConfiguration('use_math')
 
     # QoS configuration file
     qos_config = os.path.join(package_share_dir, 'config', 'qos_config_lite.yaml')
     # Parameters configuration file
     param_config = os.path.join(package_share_dir, 'config', 'config_lite.yaml')
 
-    print(param_config)
 
     # Add gauge_reader node
     ld.add_action(
@@ -54,12 +61,13 @@ def generate_launch_description():
             executable='gauge_reader_lite',
             name='gauge_reader',
             parameters=[
+                qos_config,
+                param_config,
                 {
                     'model_server_url': model_server_url,
                     'token': token,
-                },
-                qos_config,
-                param_config,
+                    'use_math': use_math,
+                }
             ],
         )
     )

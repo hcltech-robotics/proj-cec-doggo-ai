@@ -12,7 +12,7 @@ from gauge_net_interface.srv import GaugeProcess
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, ReliabilityPolicy
+from rclpy.qos import HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
 from rclpy.qos_overriding_options import QoSOverridingOptions, QoSProfile
 from sensor_msgs.msg import Image
 import torch
@@ -86,7 +86,7 @@ class GaugeReaderNode(ParentGaugeReaderNode):
         image_reliability = self.get_parameter(f'{self._namespace}.image_stream.reliability').value
         image_history = self.get_parameter(f'{self._namespace}.image_stream.history').value
         image_depth = self.get_parameter(f'{self._namespace}.image_stream.depth').value
-
+        self.get_logger().info(str(self._use_math_reading))
 
         # Setting up QoS profile for the image subscriber.
         RELIABILITY_MAP = {
@@ -95,10 +95,12 @@ class GaugeReaderNode(ParentGaugeReaderNode):
         }
 
         HISTORY_MAP = {'keep_all': HistoryPolicy.KEEP_ALL, 'keep_last': HistoryPolicy.KEEP_LAST}
-
+        self.get_logger().info(f'Image QoS settings - Reliability: {image_reliability}, History: {image_history}, Depth: {image_depth}')
+        
         image_qos_profile = QoSProfile(
             reliability=RELIABILITY_MAP.get(image_reliability, ReliabilityPolicy.RELIABLE),
             history=HISTORY_MAP.get(image_history, HistoryPolicy.KEEP_LAST),
+            durability=DurabilityPolicy.VOLATILE,
             depth=image_depth,
         )
 
@@ -133,25 +135,25 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             Image,
             'gauge_image',
             10,
-            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+            #qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         self._proc_gauge_pub = self.create_publisher(
             Image,
             'processed_gauge_image',
             10,
-            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+            #qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         self._gauge_reading_pub = self.create_publisher(
             GaugeReading,
             'gauge_reading',
             10,
-            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+            #qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         # Service to define how many images are processed
-        self._process_mode = GaugeProcess.Request.MODE_DO_NOTHING
+        self._process_mode = GaugeProcess.Request.MODE_CONTINUOUS_PROCESSING
         self._image_process_mode_srv = self.create_service(
             GaugeProcess, 'set_image_process_mode', self.set_image_process_mode_callback
         )
@@ -174,6 +176,8 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             raise Exception(f"Error while calling detect: {r.status_code} - {r.text}")
 
     def call_read(self, crop, bbox):
+        self.get_logger().info(f"Calling read on bbox: {bbox}")
+        self.get_logger().info(f"Crop shape: {crop.shape}")
         _, buf = cv2.imencode('.jpg', crop)
         b64 = base64.b64encode(buf).decode('utf-8')
         headers = {'Authorization': f'Bearer {self.token}'}
@@ -186,6 +190,7 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             raise Exception(f"Error while calling detect: {r.status_code} - {r.text}")
 
     def image_callback(self, msg):
+        self.get_logger().info('Received image for processing.')
         if self._process_mode == GaugeProcess.Request.MODE_DO_NOTHING:
             return
         elif self._process_mode == GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE:

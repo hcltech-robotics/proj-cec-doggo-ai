@@ -66,7 +66,7 @@ class AprilTagController(Node):
         super().__init__('apriltag_controller')
 
         # Parameters
-        self.declare_parameter('target_tag_id', 0)
+        self.declare_parameter('target_tag_id', 1)
         self.declare_parameter('desired_distance', 0.7)  # meters
         self.declare_parameter('desired_y_offset', 0.0)  # meters
         self.declare_parameter('desired_yaw', 0.0)  # radians (0 = directly facing tag)
@@ -548,7 +548,7 @@ class AprilTagController(Node):
             cmd = Twist()
             cmd.linear.x = 0.0
             cmd.linear.y = 0.0
-            cmd.angular.z = 0.8  # Rotate slowly to search for tag
+            cmd.angular.z = -0.5  # Rotate slowly to search for tag
             self.cmd_vel_pub.publish(cmd)
             self.get_logger().info('No tag detected, searching... (rotating)')
         else:  # Pause for 1.5 seconds
