@@ -51,8 +51,7 @@ def generate_launch_description():
         name='apriltag',
         namespace='apriltag',
         parameters=[{
-            # 'size': 0.08,
-             'size': 0.0766,
+             'size': 0.08,
             'max_tags': 32,
         }],
         remappings=[
