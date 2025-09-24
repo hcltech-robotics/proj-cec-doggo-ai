@@ -27,7 +27,7 @@ class AprilTagController(Node):
 
         # ---------- Parameters ----------
         self.declare_parameter('target_tag_id', 0)
-        self.declare_parameter('desired_distance', 0.8)      # m forward of tag (robot stops here)
+        self.declare_parameter('desired_distance', 1.0)      # m forward of tag (robot stops here)
         self.declare_parameter('desired_y_offset', 0.0)      # m lateral offset (robot-left positive)
         self.declare_parameter('desired_yaw', 0.0)           # rad (currently unused; we align to tag)
         self.declare_parameter('position_threshold', 0.25)   # m (reserved for future)
@@ -75,6 +75,7 @@ class AprilTagController(Node):
         self.nav_client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
         self.nav_goal_handle = None
         self.nav_active = False
+        self.emergency_stop_srv = self.create_service(Trigger, 'apriltag_controller/stop', self.emergency_stop_callback)
 
         # ---------- TF ----------
         self.tf_buffer = Buffer()
@@ -110,6 +111,12 @@ class AprilTagController(Node):
         self.navigate = True
         resp.success = True
         resp.message = 'Navigation control loop started'
+        return resp
+
+    def emergency_stop_callback(self, _req, resp):
+        self._emergency_stop()
+        resp.success = True
+        resp.message = 'Emergency stop executed'
         return resp
 
     # ---------- Odometry ----------
@@ -240,12 +247,35 @@ class AprilTagController(Node):
         self.navigate = False
         self.call_gauge_read()
 
+    def _emergency_stop(self):
+        """Immediate stop: cancle Nav2 goal and spam zero cmd_vel."""
+        self.get_logger().warn('Emergency stop triggered!')
+
+        # Call emergency stop service if available
+        if getattr(self, 'nav_goal_handle', None) and self.nav_goal_handle.accepted:
+            try:
+                cancel_future = self.nav_goal_handle.cancel_goal_async()
+                cancel_future.add_done_callback(lambda f: self.get_logger().info('Nav2 goal cancelled'))
+            except Exception as e:
+                self.get_logger().error(f'Failed to cancel Nav2 goal: {e}')
+
+        self.nav_active = False
+        self.navigate = False
+
+
+        # Spam zero cmd_vel to ensure robot stops
+        zero = Twist()
+        for _ in range(5):
+            self.cmd_vel_pub.publish(zero)
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().info('Robot stopped.')
+
     # ---------- Tag callbacks ----------
     def tag_callback(self, msg):
         """Isaac ROS: msg.detections[i].id (int), .pose (PoseWithCovarianceStamped)."""
         for det in msg.detections:
             # Log detection
-            self.get_logger().info(f'Detected target tag ID {det.id}.')
             if det.id != self.target_tag_id:
                 continue
             

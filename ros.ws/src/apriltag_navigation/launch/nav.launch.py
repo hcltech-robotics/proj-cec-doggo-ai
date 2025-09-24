@@ -38,8 +38,8 @@ def generate_launch_description():
         name='rectify',
         namespace='apriltag',
         parameters=[{
-            'output_width': 1920,
-            'output_height': 1080,
+            'output_width': 1280,
+            'output_height': 720,
         }],
         remappings=[('image_raw', '/camera/image_raw'),
                     ('camera_info', '/camera/camera_info')]
