@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+import json
 import math
+import time
+import threading
 import os
 
 import cv2
@@ -8,14 +11,19 @@ from cv_bridge import CvBridge
 from gauge_net.transforms import custom_transform
 from gauge_net_interface.msg import GaugeReading
 from gauge_net_interface.srv import GaugeProcess
+from go2_interfaces.msg import WebRtcReq
 import numpy as np
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, ReliabilityPolicy
 from rclpy.qos_overriding_options import QoSOverridingOptions, QoSProfile
 from sensor_msgs.msg import Image
 import torch
+import torchvision
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 import torchvision.transforms as transforms
+
 
 
 
@@ -47,6 +55,7 @@ class GaugeReaderNode(Node):
             ],
         )
 
+        # Read parameters
         self._use_math_reading = (
             self.get_parameter(f'{self._node_name}.use_math').get_parameter_value().bool_value
         )
@@ -81,10 +90,13 @@ class GaugeReaderNode(Node):
             .get_parameter_value()
             .string_value
         )
+
+        # Image stream QoS parameters
         image_reliability = self.get_parameter(f'{self._node_name}.image_stream.reliability').value
         image_history = self.get_parameter(f'{self._node_name}.image_stream.history').value
         image_depth = self.get_parameter(f'{self._node_name}.image_stream.depth').value
 
+        # Validate model file paths
         if not os.path.isfile(detector_model_path):
             self.get_logger().error(f'Detector model file not found: {detector_model_path}')
             raise FileNotFoundError(f'Missing detector model: {detector_model_path}')
@@ -94,8 +106,6 @@ class GaugeReaderNode(Node):
             raise FileNotFoundError(f'Missing reader model: {reader_model_path}')
 
         # Load the detector model.
-        import torchvision
-        from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
         self._detector_model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(num_classes = 3)
         in_features = self._detector_model.roi_heads.box_predictor.cls_score.in_features
         self._detector_model.roi_heads.box_predictor = FastRCNNPredictor(in_features, 3)
@@ -136,15 +146,20 @@ class GaugeReaderNode(Node):
             depth=image_depth,
         )
 
+
         # Subscribers and Publishers:
         # - Subscribing to the incoming image.
         # - Publishing:
         #   - the detected gauge image (bounding box on needle),
         #   - the processed image (bounding box on needle),
         #   - and the gauge reading.
+        #   - Publishing WebRTC requests to control the flashlight.
         try:
             self._image_sub = self.create_subscription(
-                Image, self._image_topic, self.image_callback, qos_profile=image_qos_profile
+                Image, 
+                self._image_topic, 
+                self.image_callback, 
+                qos_profile=image_qos_profile
             )
         except Exception as e:
             self.get_logger().error(f'Failed to create image subscriber: {e}')
@@ -170,17 +185,42 @@ class GaugeReaderNode(Node):
             10,
             qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
+        self._flashlight_pub = self.create_publisher(WebRtcReq, "/webrtc_req", 10)
+
 
         # Service to define how many images are processed
         self._process_mode = GaugeProcess.Request.MODE_DO_NOTHING
         self._image_process_mode_srv = self.create_service(
-            GaugeProcess, 'set_image_process_mode', self.set_image_process_mode_callback
+            GaugeProcess, 
+            'set_image_process_mode', 
+            self.set_image_process_mode_callback        
         )
 
         # cv_bridge for image conversion.
         self._bridge = CvBridge()
 
+        # setting up condition variable and thread for image processing
+        self._cv = threading.Condition()
+        self._latest_image = None 
+        self._seq_no = 0
+        self._inference_is_running = False
+        self._infer_thread = None
+
         self.get_logger().info('GaugeReader Node Started')
+
+    def _set_flashlight(self, value: int):
+        # clamp 0..10 to be safe
+        v = max(0, min(10, int(value)))
+
+        req = WebRtcReq()
+        req.id = 0  
+        req.topic = 'rt/api/vui/request'   
+        req.api_id = 1005
+        req.priority = 0  
+        req.parameter = json.dumps({"brightness": v})  
+
+        self.get_logger().info(f'Setting flashlight brightness to {v} | payload={req.parameter}')
+        self._flashlight_pub.publish(req)
 
     def set_image_process_mode_callback(
         self, request: GaugeProcess.Request, response: GaugeProcess.Response
@@ -404,54 +444,107 @@ class GaugeReaderNode(Node):
             'gauge_value': gauge_value,
             'raw_value': gauge_value / self._scaling_max,  # Normalized value
         }
+    
+    def _start_inference_thread(self):
+        """Start the inference thread if not already running."""
+        if self._inference_is_running:
+            self.get_logger().info('Inference already running, skipping new start.')
+            return
+        
+        self._inference_is_running = True
+        self._infer_thread = threading.Thread(target=self.process_last_image, daemon=True)
+        self._infer_thread.start()
 
     def image_callback(self, msg):
+        """Callback for incoming images."""
+        with self._cv:
+            self._latest_image = msg
+            self._seq_no += 1
+            self._cv.notify_all()
+
         if self._process_mode == GaugeProcess.Request.MODE_DO_NOTHING:
             return
         elif self._process_mode == GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE:
             self._process_mode = GaugeProcess.Request.MODE_DO_NOTHING
+            self._start_inference_thread()
 
-        cv_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
-        detection_result = self.detect_gauge(cv_image)
+    def _wait_for_fresh_image(self, after_seq_no, timeout_s=0.5):
+        """Block until _seq_no > after_seq or timeout"""
+        with self._cv:
+            ok = self._cv.wait_for(lambda: self._seq_no > after_seq_no, timeout=timeout_s)
+            return (self._latest_image if ok else None), self._seq_no, ok
 
-        # Do some checks on the detection results
-        if detection_result['gauge']['score'] < self._min_gauge_score:
-            self.get_logger().warning('Skipping observation: missing valid gauge detection.')
-            return
-        if detection_result['needle']['score'] < self._min_needle_score:
-            self.get_logger().warning('Skipping observation: missing valid needle detection.')
+    def process_last_image(self):
+        brightness_value = 3  # Set brightness level (0-10)
+        gauge_needle_found = False
+
+        while not gauge_needle_found and brightness_value <= 10:
+            self._set_flashlight(brightness_value)
+            last_seq_no = self._seq_no
+            img_msg, last_seq_no, ok = self._wait_for_fresh_image(last_seq_no, timeout_s=0.5)
+            if not ok or img_msg is None:
+                self.get_logger().warn(f'No fresh image received after setting flashlight to {brightness_value}.')
+                continue
+
+            cv_image = self._bridge.imgmsg_to_cv2(img_msg, desired_encoding='rgb8')
+            detection_result = self.detect_gauge(cv_image)
+            # Do some checks on the detection results
+            if detection_result['gauge']['score'] < self._min_gauge_score:
+                self.get_logger().warning('Skipping observation: missing valid gauge detection.')
+                brightness_value += 2  # Increase brightness and try again
+                continue
+            if detection_result['needle']['score'] < self._min_needle_score:
+                self.get_logger().warning('Skipping observation: missing valid needle detection.')
+                brightness_value += 2  # Increase brightness and try again
+                continue
+            
+            gauge_needle_found = True
+        
+        if not gauge_needle_found:
+            self.get_logger().error('Failed to detect gauge and needle after adjusting flashlight.')
+            self._inference_is_running = False
+            self._set_flashlight(0)  # Ensure flashlight is off
             return
         if not self._needle_in_gauge(
             detection_result['gauge']['bbox'], detection_result['needle']['bbox']
         ):
             self.get_logger().warning('Skipping observation: needle not in gauge.')
+            self._inference_is_running = False
+            self._set_flashlight(0)  # Ensure flashlight is off
             return
-        header = msg.header
-        cropped_gauge, needle_bbox = self._crop_gauge(cv_image, detection_result)
-        self._publish_gauge_image(cropped_gauge.copy(), needle_bbox, header)
+        
+        try:
+            header = img_msg.header
+            cropped_gauge, needle_bbox = self._crop_gauge(cv_image, detection_result)
+            self._publish_gauge_image(cropped_gauge.copy(), needle_bbox, header)
 
-        if self._use_math_reading:
-            result = self._calculate_gauge_value(cropped_gauge, needle_bbox)
+            if self._use_math_reading:
+                result = self._calculate_gauge_value(cropped_gauge, needle_bbox)
 
-            self.get_logger().info(
-                f'Needle bounding box: {needle_bbox} '
-                f'(width={needle_bbox[2]-needle_bbox[0]}, '
-                f'height={needle_bbox[3]-needle_bbox[1]})'
-            )
-            self.get_logger().info(f"Needle tip detected at: {result['needle_tip']}")
-            self.get_logger().info(f"Gauge center: {result['center']}")
-            self.get_logger().info(f"Gauge Needle Angle: {result['angle_degrees']:.2f}° of {270}°")
-            self.get_logger().info(f"Gauge Value: {result['gauge_value']:.2f} of 10")
+                self.get_logger().info(
+                    f'Needle bounding box: {needle_bbox} '
+                    f'(width={needle_bbox[2]-needle_bbox[0]}, '
+                    f'height={needle_bbox[3]-needle_bbox[1]})'
+                )
+                self.get_logger().info(f"Needle tip detected at: {result['needle_tip']}")
+                self.get_logger().info(f"Gauge center: {result['center']}")
+                self.get_logger().info(f"Gauge Needle Angle: {result['angle_degrees']:.2f}° of {270}°")
+                self.get_logger().info(f"Gauge Value: {result['gauge_value']:.2f} of 10")
 
-            gauge_reading = result['raw_value']
-        else:
-            trans_gauge, trans_needle = self._transform_data(cropped_gauge, needle_bbox)
-            self._publish_transformed_image(trans_gauge.copy(), trans_needle, header)
+                gauge_reading = result['raw_value']
+            else:
+                trans_gauge, trans_needle = self._transform_data(cropped_gauge, needle_bbox)
+                self._publish_transformed_image(trans_gauge.copy(), trans_needle, header)
 
-            gauge_reading = self._read_gauge_value(trans_gauge, trans_needle)
+                gauge_reading = self._read_gauge_value(trans_gauge, trans_needle)
 
-        # Publish the gauge reading
-        self._publish_gauge_reading(gauge_reading, header)
+            # Publish the gauge reading
+            self._publish_gauge_reading(gauge_reading, header)
+        except Exception as e:
+            self.get_logger().error(f'Error processing image: {str(e)}')
+        finally:
+            self._inference_is_running = False
+            self._set_flashlight(0)  # Ensure flashlight is off
 
 
 def main(args=None):
