@@ -1,0 +1,5 @@
+kws_node:
+  ros__parameters:
+    sensitivity: 0.7           # 0..1 (higher = more sensitive, more false wakes)
+    trigger_level: 2           # frames above threshold required to fire
+    frame_len: 1600            # samples per step (100 ms @ 16 kHz)

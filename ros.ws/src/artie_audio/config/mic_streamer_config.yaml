@@ -1,0 +1,6 @@
+mic_streamer:
+  ros__parameters:
+    audio.input_device: "Jabra Speak 710"   # e.g., "Jabra SPEAK 510", or device index like "2"
+    audio.sample_rate: 16000        # 8000 | 16000 | 32000 | 44100 | 48000
+    audio.channels: 1               # 1 (mono) or 2 (stereo)
+    audio.frame_ms: 20              # typical: 10 | 20 | 30

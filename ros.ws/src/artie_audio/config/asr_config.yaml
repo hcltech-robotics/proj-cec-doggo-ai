@@ -1,0 +1,8 @@
+fast_whisper_listener:
+  ros__parameters:
+    listen_seconds: 7                 # seconds of recent audio to keep for ASR
+    whisper.model: "small"            # model: tiny | base | small | medium | large-v3 | distil-small
+    whisper.device: "auto"            # "cuda", "cpu", or "auto" (auto = Jetson GPU if available)
+    whisper.compute_type: "float16"   # "float16" on Jetson, "int8" if CPU
+    language: "en"                    # ISO code, e.g., "en" | "hu" | "" for auto-detect
+    kws.topic: "/voice/kws"                  # wake-word topic publishing std_msgs/String("wake")
