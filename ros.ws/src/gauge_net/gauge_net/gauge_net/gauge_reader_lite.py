@@ -15,13 +15,11 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
 from rclpy.qos_overriding_options import QoSOverridingOptions, QoSProfile
 from sensor_msgs.msg import Image
-import torch
-import torchvision.transforms as transforms
-from .gauge_reader import GaugeReaderNode as ParentGaugeReaderNode
+from .gauge_reader_parent import GaugeReaderParent
 
 
 
-class GaugeReaderNode(ParentGaugeReaderNode):
+class GaugeReaderNode(GaugeReaderParent):
 
     def __init__(self):
         self._namespace = 'gauge_reader'
@@ -29,7 +27,7 @@ class GaugeReaderNode(ParentGaugeReaderNode):
         Node.__init__(self, self._node_name, namespace=self._namespace)
 
         # Use the GPU if available.
-        self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        #self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Declare and get node parameters.
         self.declare_parameters(
@@ -104,18 +102,18 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             depth=image_depth,
         )
 
-        self._detector_transform = transforms.Compose(
-            [
-                transforms.ToPILImage(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ]
-        )
+        # self._detector_transform = transforms.Compose(
+        #     [
+        #         transforms.ToPILImage(),
+        #         transforms.ToTensor(),
+        #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        #     ]
+        # )
 
-        # Image processing pipeline for the reader.
-        self._reader_transform = transforms.Compose(
-            [custom_transform.CLAHEPreprocess(), custom_transform.ResizeWithPaddingAndBBox()]
-        )
+        # # Image processing pipeline for the reader.
+        # self._reader_transform = transforms.Compose(
+        #     [custom_transform.CLAHEPreprocess(), custom_transform.ResizeWithPaddingAndBBox()]
+        # )
 
         # Subscribers and Publishers:
         # - Subscribing to the incoming image.
@@ -164,7 +162,7 @@ class GaugeReaderNode(ParentGaugeReaderNode):
         self.get_logger().info('GaugeReader Node Started')
 
 
-    def call_detect(self, cv_image):
+    def detect(self, cv_image):
         _, buf = cv2.imencode('.jpg', cv_image)
         b64 = base64.b64encode(buf).decode('utf-8')
         headers = {'Authorization': f'Bearer {self.token}'}
@@ -175,7 +173,7 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             self.get_logger().error(f"Error while calling detect: {r.status_code} - {r.text}")
             raise Exception(f"Error while calling detect: {r.status_code} - {r.text}")
 
-    def call_read(self, crop, bbox):
+    def read(self, crop, bbox):
         self.get_logger().info(f"Calling read on bbox: {bbox}")
         self.get_logger().info(f"Crop shape: {crop.shape}")
         _, buf = cv2.imencode('.jpg', crop)
@@ -197,7 +195,7 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             self._process_mode = GaugeProcess.Request.MODE_DO_NOTHING
 
         cv_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
-        detection_result = self.call_detect(cv_image)
+        detection_result = self.detect(cv_image)
 
         # Do some checks on the detection results
         if detection_result['gauge']['score'] < self._min_gauge_score:
@@ -233,7 +231,7 @@ class GaugeReaderNode(ParentGaugeReaderNode):
             trans_gauge, trans_needle = self._transform_data(cropped_gauge, needle_bbox)
             self._publish_transformed_image(trans_gauge.copy(), trans_needle, header)
 
-            gauge_reading = self.call_read(trans_gauge, trans_needle)
+            gauge_reading = self.read(trans_gauge, trans_needle)
 
         # Publish the gauge reading
         self._publish_gauge_reading(gauge_reading, header)
