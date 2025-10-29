@@ -21,6 +21,9 @@ def generate_launch_description():
     default_use_math = 'True'
     default_image_topic = '/quadruped/camera/rgb'
     default_camera_info_topic = '/quadruped/camera/camera_info'
+    default_twist_joy_enable_button = "5"
+    default_twist_joy_linear_x_button = "4"
+    default_twist_joy_angular_yaw_button = "3"  
 
     # Create launch description
     ld = launch.LaunchDescription()
@@ -50,6 +53,33 @@ def generate_launch_description():
         )
     )
 
+    ld.add_action(
+        launch.actions.DeclareLaunchArgument(
+            'twist_joy_enable_button',
+            description='',
+            default_value=default_twist_joy_enable_button,
+        )
+    )
+
+
+    ld.add_action(
+        launch.actions.DeclareLaunchArgument(
+            'twist_joy_linear_linear_x_button',
+            description='',
+            default_value=default_twist_joy_linear_x_button,
+        )
+    )
+
+    ld.add_action(
+        launch.actions.DeclareLaunchArgument(
+            'twist_joy_angular_yaw_button',
+            description='',
+            default_value=default_twist_joy_angular_yaw_button,
+        )
+    )
+
+
+
     image_topic = ld.add_action(
         launch.actions.DeclareLaunchArgument('image_topic', default_value=default_image_topic)
     )
@@ -64,6 +94,10 @@ def generate_launch_description():
     use_math = LaunchConfiguration('use_math', default = default_use_math)
     image_topic = LaunchConfiguration('image_topic', default=default_image_topic)
     camera_info_topic = LaunchConfiguration('camera_info_topic', default=default_camera_info_topic)
+    twist_joy_enable_button = LaunchConfiguration('twist_joy_enable_button', default=default_twist_joy_enable_button)
+    twist_joy_linear_linear_x_button = LaunchConfiguration('twist_joy_linear_linear_x_button', default=default_twist_joy_linear_x_button)
+    twist_joy_angular_yaw_button = LaunchConfiguration('twist_joy_angular_yaw_button', default=default_twist_joy_angular_yaw_button)
+
 
     rectify_node = ComposableNode(
         package='image_proc',
@@ -141,9 +175,9 @@ def generate_launch_description():
             name='teleop_node',
             output='screen',
             parameters=[
-                {'enable_button': 5},
-                {'axis_angular.yaw': 3},
-                {'axis_linear.x': 4},
+                {'enable_button': twist_joy_enable_button},
+                {'axis_angular.yaw': twist_joy_angular_yaw_button},
+                {'axis_linear.x': twist_joy_linear_linear_x_button},
                 {'scale_linear.x': 2.0},
                 {'scale_angular.z': 2.0}
             ],

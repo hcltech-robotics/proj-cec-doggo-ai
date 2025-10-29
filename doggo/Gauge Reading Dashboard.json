@@ -1,0 +1,161 @@
+{
+  "configById": {
+    "Image!4jrl3zr": {
+      "cameraState": {
+        "distance": 20,
+        "perspective": true,
+        "phi": 60,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {
+        "imageTopic": "/gauge_reader/gauge_image"
+      }
+    },
+    "Gauge!eqvv45": {
+      "path": "/gauge_reader/gauge_reading.scaled_reading",
+      "minValue": 0,
+      "maxValue": 10,
+      "colorMap": "red-yellow-green",
+      "colorMode": "colormap",
+      "gradient": [
+        "#0000ff",
+        "#ff00ff"
+      ],
+      "reverse": false,
+      "reverseDirection": false
+    },
+    "Image!h9vbc9": {
+      "cameraState": {
+        "distance": 20,
+        "perspective": true,
+        "phi": 60,
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOffset": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {
+        "imageTopic": "/apriltag/image_rect/compressed"
+      }
+    },
+    "Tab!3u0t2lh": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "layout": {
+            "first": "Image!4jrl3zr",
+            "second": "Gauge!eqvv45",
+            "direction": "column"
+          },
+          "title": ""
+        }
+      ]
+    },
+    "Plot!19clcz7": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/gauge_reader/gauge_reading.scaled_reading",
+          "enabled": true,
+          "color": "#4e98e2"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Tab!nxf578": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "layout": "Image!h9vbc9",
+          "title": ""
+        }
+      ]
+    }
+  },
+  "layout": {
+    "first": "Tab!3u0t2lh",
+    "second": {
+      "first": "Plot!19clcz7",
+      "second": "Tab!nxf578",
+      "direction": "column",
+      "splitPercentage": 51.01241018941868
+    },
+    "direction": "row",
+    "splitPercentage": 50.08319467554077
+  },
+  "globalVariables": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "userNodes": {}
+}
