@@ -26,59 +26,60 @@ from launch_ros.descriptions import ComposableNode
 def generate_launch_description():
 
     # Get the package share directory
-    package_dir = get_package_share_directory('apriltag_navigation')
+    package_dir = get_package_share_directory("apriltag_navigation")
 
     # Get the config file
-    config_file = os.path.join(
-        package_dir, 'config', 'apriltag_controller_params.yaml')
+    config_file = os.path.join(package_dir, "config", "apriltag_controller_params.yaml")
 
-    rectify_node = ComposableNode(
-        package='isaac_ros_image_proc',
-        plugin='nvidia::isaac_ros::image_proc::RectifyNode',
-        name='rectify',
-        namespace='apriltag',
-        parameters=[{
-            'output_width': 1280,
-            'output_height': 720,
-        }],
-        remappings=[('image_raw', '/camera/image_raw'),
-                    ('camera_info', '/camera/camera_info')]
-    )
+    # rectify_node = ComposableNode(
+    #     package='isaac_ros_image_proc',
+    #     plugin='nvidia::isaac_ros::image_proc::RectifyNode',
+    #     name='rectify',
+    #     namespace='apriltag',
+    #     parameters=[{
+    #         'output_width': 1280,
+    #         'output_height': 720,
+    #     }],
+    #     remappings=[('image_raw', '/camera/image_raw'),
+    #                 ('camera_info', '/camera/camera_info')]
+    # )
 
     apriltag_node = ComposableNode(
-        package='isaac_ros_apriltag',
-        plugin='nvidia::isaac_ros::apriltag::AprilTagNode',
-        name='apriltag',
-        namespace='apriltag',
-        parameters=[{
-             'size': 0.08,
-            'max_tags': 32,
-        }],
+        package="isaac_ros_apriltag",
+        plugin="nvidia::isaac_ros::apriltag::AprilTagNode",
+        name="apriltag",
+        namespace="apriltag",
+        parameters=[
+            {
+                "size": 0.08,
+                "max_tags": 32,
+            }
+        ],
         remappings=[
-            ('image', 'image_rect'),
-            ('camera_info', 'camera_info_rect'),
-            ('tf', '/tf')
-        ]
+            ("image", "/camera/image_raw"),
+            ("camera_info", "/camera/camera_info"),
+            ("tf", "/tf"),
+        ],
     )
 
     controller_node = Node(
-        package='apriltag_navigation',
-        executable='apriltag_controller',
-        name='apriltag_controller',
+        package="apriltag_navigation",
+        executable="apriltag_controller",
+        name="apriltag_controller",
         parameters=[config_file],
-        output='screen'
+        output="screen",
     )
 
     apriltag_container = ComposableNodeContainer(
-        package='rclcpp_components',
-        name='apriltag_container',
-        namespace='',
-        executable='component_container_mt',
+        package="rclcpp_components",
+        name="apriltag_container",
+        namespace="",
+        executable="component_container_mt",
         composable_node_descriptions=[
-            rectify_node,
+            # rectify_node,
             apriltag_node,
         ],
-        output='screen'
+        output="screen",
     )
 
     return launch.LaunchDescription([apriltag_container, controller_node])

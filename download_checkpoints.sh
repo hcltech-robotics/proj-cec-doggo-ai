@@ -30,9 +30,9 @@ download () {
   local url="$1"; shift
   info "Downloading $(basename "$out")..."
   if command -v wget >/dev/null 2>&1; then
-    wget -q --show-progress -O "$out" "$url"
+    wget -q --no-show-progress -O "$out" "$url"
   elif command -v curl >/dev/null 2>&1; then
-    curl -L --progress-bar -o "$out" "$url"
+    curl -sSL -o "$out" "$url"
   else
     err "Neither wget nor curl found."
     return 1
