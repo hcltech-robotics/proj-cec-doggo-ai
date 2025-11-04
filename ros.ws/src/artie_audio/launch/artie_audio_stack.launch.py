@@ -34,6 +34,8 @@ def generate_launch_description():
     kws_config = os.path.join(package_share_dir, 'config', 'kws_config.yaml')
     mic_streamer_config = os.path.join(package_share_dir, 'config', 'mic_streamer_config.yaml')
     asr_config = os.path.join(package_share_dir, 'config', 'asr_config.yaml')
+    tts_config = os.path.join(package_share_dir, 'config', 'tts_config.yaml')
+
     # Add KWS node
     ld.add_action(
         launch_ros.actions.Node(
@@ -61,14 +63,24 @@ def generate_launch_description():
     )
 
     ld.add_action(
-    launch_ros.actions.Node(
-        package=package_name,
-        executable='asr_node',
-        name='asr_node',
-        parameters=[
-            asr_config,
-        ],
-    )
+        launch_ros.actions.Node(
+            package=package_name,
+            executable='asr_node',
+            name='asr_node',
+            parameters=[
+                asr_config,
+            ],
+        )
     )
 
+    ld.add_action(
+        launch_ros.actions.Node(
+            package=package_name,
+            executable='tts_node',
+            name='tts_node',
+            parameters=[
+                tts_config,
+            ],
+        )
+    )
     return ld

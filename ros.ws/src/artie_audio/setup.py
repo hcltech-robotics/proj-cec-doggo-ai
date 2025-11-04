@@ -31,7 +31,8 @@ setup(
         'console_scripts': [
             'mic_streamer = artie_audio.mic_streamer:main',
             'kws_node = artie_audio.kws_node:main',
-            'asr_node = artie_audio.asr:main'
+            'asr_node = artie_audio.asr:main',
+            'tts_node = artie_audio.tts_node:main',
         ],
     },
 )

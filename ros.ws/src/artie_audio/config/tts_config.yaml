@@ -1,0 +1,7 @@
+tts_node:
+  ros__parameters:
+    voice_id: "21m00Tcm4TlvDq8ikWAM"                    # or a specific voice_id UUID
+    model_id: "eleven_multilingual_v2"     # or "eleven_multilingual_v2"
+    api_key_env: "ELEVENLABS_API_KEY"  # env var name to read the API key from
+    interrupt_on_new_message: true      # stop current playback if new LLM text arrives
+    output_format: "mp3_44100_128"
