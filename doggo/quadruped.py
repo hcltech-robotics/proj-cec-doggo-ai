@@ -220,12 +220,16 @@ class SimulationWorld():
                 prim = define_prim("/World/Warehouse", "Xform")
                 asset_path = assets_root_path + "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
                 prim.GetReferences().AddReference(asset_path)
-        elif environment == "jetty":
+        elif environment == "jetty" or environment == "jetty-latest":
             prim = get_prim_at_path("/World/Jetty")
 
             if not prim.IsValid():
                 prim = define_prim("/World/Jetty", "Xform")
-                asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v10.usd"
+                if environment == "jetty":
+                    asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v10.usd"
+                else:
+                    asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v19.usd"
+
                 prim.GetReferences().AddReference(asset_path)
                 
         elif environment == "office":
@@ -285,6 +289,8 @@ class SimulationWorld():
     def spawn_location(self):
         if self.environment == "jetty":
             return np.array([97, -21.5, 12])
+        elif self.environment == "jetty-latest":
+            return np.array([93.85, -24.84, 12])
         elif self.environment == "office":
             return np.array([-3.0, -8.0, 0.47])
         else:
@@ -706,8 +712,8 @@ if __name__ == "__main__":
         "--env",
         type=str,
         default="default",
-        choices=["default", "warehouse", "jetty", "office"],
-        help="Environment to spawn the robot in. Valid options: default, warehouse, jetty, office."
+        choices=["default", "warehouse", "jetty", "jetty-latest", "office"],
+        help="Environment to spawn the robot in. Valid options: default, warehouse, jetty, jetty-latest, office."
     )
     parser.add_argument(
         "--quadruped",
