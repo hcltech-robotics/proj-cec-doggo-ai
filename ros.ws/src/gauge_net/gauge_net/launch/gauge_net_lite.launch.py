@@ -78,6 +78,14 @@ def generate_launch_description():
         )
     )
 
+    ld.add_action(
+        launch.actions.DeclareLaunchArgument(
+            'foxglove_bridge_enable',
+            default_value='true',
+            description='Enable Foxglove Bridge websocket server'
+        )
+    )
+    foxglove_bridge_enable = LaunchConfiguration('foxglove_bridge_enable')
 
 
     image_topic = ld.add_action(
@@ -196,5 +204,21 @@ def generate_launch_description():
             output='screen'
         ),
     )
+
+    foxglove_bridge_node = launch_ros.actions.Node(
+        package='foxglove_bridge',
+        executable='foxglove_bridge',
+        name='foxglove_bridge',
+        output='screen',
+        parameters=[
+            {
+                'address': '0.0.0.0',
+                'num_threads': 4,
+                'send_buffer_size': 100000000,        # OS default
+            }
+        ],
+        condition=launch.conditions.IfCondition(foxglove_bridge_enable)
+    )
+    ld.add_action(foxglove_bridge_node)
 
     return ld
