@@ -229,7 +229,7 @@ class SimulationWorld():
                 if environment == "jetty":
                     asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v10.usd"
                 else:
-                    asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v19.usd"
+                    asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v22.usd"
 
                 prim.GetReferences().AddReference(asset_path)
                 
