@@ -23,59 +23,94 @@ from gauge_net_interface.srv import GaugeProcess
 
 class AprilTagController(Node):
     def __init__(self):
-        super().__init__('apriltag_controller')
+        super().__init__("apriltag_controller")
 
         # ---------- Parameters ----------
-        self.declare_parameter('target_tag_id', 0)
-        self.declare_parameter('desired_distance', 1.0)      # m forward of tag (robot stops here)
-        self.declare_parameter('desired_y_offset', 0.0)      # m lateral offset (robot-left positive)
-        self.declare_parameter('desired_yaw', 0.0)           # rad (currently unused; we align to tag)
-        self.declare_parameter('position_threshold', 0.25)   # m (reserved for future)
-        self.declare_parameter('angle_threshold', 0.25)      # rad (reserved for future)
-        self.declare_parameter('tag_timeout', 2.0)           # s
-        self.declare_parameter('optical_frame_id', 'camera_color_optical_frame')
-        self.declare_parameter('base_frame_id', 'base_link')
-        self.declare_parameter('odom_frame_id', 'odom')
-        self.declare_parameter('use_isaac_apriltag', True)
+        self.declare_parameter("target_tag_id", 0)
+        self.declare_parameter(
+            "desired_distance", 1.0
+        )  # m forward of tag (robot stops here)
+        self.declare_parameter(
+            "desired_y_offset", 0.0
+        )  # m lateral offset (robot-left positive)
+        self.declare_parameter(
+            "desired_yaw", 0.0
+        )  # rad (currently unused; we align to tag)
+        self.declare_parameter("position_threshold", 0.25)  # m (reserved for future)
+        self.declare_parameter("angle_threshold", 0.25)  # rad (reserved for future)
+        self.declare_parameter("tag_timeout", 2.0)  # s
+        self.declare_parameter("optical_frame_id", "camera_color_optical_frame")
+        self.declare_parameter("base_frame_id", "base_link")
+        self.declare_parameter("odom_frame_id", "odom")
+        self.declare_parameter("use_isaac_apriltag", True)
 
         # Snapshot parameter values
-        self.target_tag_id = self.get_parameter('target_tag_id').value
-        self.desired_distance = self.get_parameter('desired_distance').value
-        self.desired_y_offset = self.get_parameter('desired_y_offset').value
-        self.desired_yaw = self.get_parameter('desired_yaw').value
-        self.position_threshold = self.get_parameter('position_threshold').value
-        self.angle_threshold = self.get_parameter('angle_threshold').value
-        self.tag_timeout = self.get_parameter('tag_timeout').value
-        self.optical_frame_id = self.get_parameter('optical_frame_id').value
-        self.base_frame_id = self.get_parameter('base_frame_id').value
-        self.odom_frame_id = self.get_parameter('odom_frame_id').value
-        self.use_isaac_apriltag = self.get_parameter('use_isaac_apriltag').get_parameter_value().bool_value
+        self.target_tag_id = self.get_parameter("target_tag_id").value
+        self.desired_distance = self.get_parameter("desired_distance").value
+        self.desired_y_offset = self.get_parameter("desired_y_offset").value
+        self.desired_yaw = self.get_parameter("desired_yaw").value
+        self.position_threshold = self.get_parameter("position_threshold").value
+        self.angle_threshold = self.get_parameter("angle_threshold").value
+        self.tag_timeout = self.get_parameter("tag_timeout").value
+        self.optical_frame_id = self.get_parameter("optical_frame_id").value
+        self.base_frame_id = self.get_parameter("base_frame_id").value
+        self.odom_frame_id = self.get_parameter("odom_frame_id").value
+        self.use_isaac_apriltag = (
+            self.get_parameter("use_isaac_apriltag").get_parameter_value().bool_value
+        )
 
+        if self.use_isaac_apriltag:
+            from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
+
+            self.detection_type = AprilTagDetectionArray
+            self.detections_topic = "/apriltag/tag_detections"
+        else:
+            from apriltag_msgs.msg import AprilTagDetectionArray
+
+            self.detection_type = AprilTagDetectionArray
+            self.detections_topic = "/apriltag/detections"
+
+        tag_callback = (
+            self.tag_callback if self.use_isaac_apriltag else self.tag_callback_lite
+        )
         # ---------- Publishers / Subscribers ----------
-        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
 
         qos_tags = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1
+            depth=1,
         )
 
-        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
+        self.odom_sub = self.create_subscription(
+            Odometry, "/odom", self.odom_callback, 10
+        )
 
-        self.tag_sub = self.create_subscription(AprilTagDetectionArray, '/apriltag/tag_detections', self.tag_callback, qos_tags)
+        self.tag_sub = self.create_subscription(
+            self.detection_type,
+            self.detections_topic,
+            tag_callback,
+            qos_tags,
+        )
 
         # ---------- Services / Actions ----------
-        self.srv = self.create_service(Trigger, 'apriltag_controller/trigger', self.start_control)
+        self.srv = self.create_service(
+            Trigger, "apriltag_controller/trigger", self.start_control
+        )
 
-        self.gauge_reader = self.create_client(GaugeProcess, '/gauge_reader/set_image_process_mode')
+        self.gauge_reader = self.create_client(
+            GaugeProcess, "/gauge_reader/set_image_process_mode"
+        )
         # Non-blocking: just warn if unavailable (don’t stall node init)
         self.create_timer(1.0, self._warn_if_gauge_unavailable_once)
         self._warned_gauge = False
 
-        self.nav_client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
+        self.nav_client = ActionClient(self, NavigateToPose, "/navigate_to_pose")
         self.nav_goal_handle = None
         self.nav_active = False
-        self.emergency_stop_srv = self.create_service(Trigger, 'apriltag_controller/stop', self.emergency_stop_callback)
+        self.emergency_stop_srv = self.create_service(
+            Trigger, "apriltag_controller/stop", self.emergency_stop_callback
+        )
 
         # ---------- TF ----------
         self.tf_buffer = Buffer()
@@ -83,16 +118,16 @@ class AprilTagController(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
 
         # Frames
-        self.tag_frame_id = f'apriltag_{self.target_tag_id}'
-        self.apriltag_lib_tag_frame_id = f'tag36h11:{self.target_tag_id}'
-        self.target_frame_id = 'target'
+        self.tag_frame_id = f"apriltag_{self.target_tag_id}"
+        self.apriltag_lib_tag_frame_id = f"tag36h11:{self.target_tag_id}"
+        self.target_frame_id = "target"
 
         # ---------- State ----------
         self.navigate = False
         self.tag_detected = False
         self.last_detection_time = self.get_clock().now()
         self.last_odom_pose: Pose | None = None
-        self.tag_in_odom_frame: np.ndarray | None = None   # [x, y, z]
+        self.tag_in_odom_frame: np.ndarray | None = None  # [x, y, z]
         self.tag_orientation_in_odom: float | None = None  # yaw
         self.current_target_pose: PoseStamped | None = None
 
@@ -100,23 +135,24 @@ class AprilTagController(Node):
         self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
 
         self._last_search_phase = None  # for log de-spam
-        self.get_logger().info('AprilTag Controller initialized.')
+
+        self.get_logger().info("AprilTag Controller initialized.")
 
     # ---------- Triggers ----------
     def start_control(self, _req, resp):
-        self.get_logger().info('Starting navigation control loop...')
+        self.get_logger().info("Starting navigation control loop...")
         self.tag_in_odom_frame = None
         self.tag_orientation_in_odom = None
         self.tag_detected = False
         self.navigate = True
         resp.success = True
-        resp.message = 'Navigation control loop started'
+        resp.message = "Navigation control loop started"
         return resp
 
     def emergency_stop_callback(self, _req, resp):
         self._emergency_stop()
         resp.success = True
-        resp.message = 'Emergency stop executed'
+        resp.message = "Emergency stop executed"
         return resp
 
     # ---------- Odometry ----------
@@ -171,7 +207,9 @@ class AprilTagController(Node):
         self.tf_broadcaster.sendTransform(t)
 
     # ---------- Goal building ----------
-    def build_approach_goal_pose_in_odom(self, dx=0.6, dy=0.0, yaw_align=True) -> PoseStamped | None:
+    def build_approach_goal_pose_in_odom(
+        self, dx=0.6, dy=0.0, yaw_align=True
+    ) -> PoseStamped | None:
         """
         Place a goal 'dx' meters back from the tag (along robot->tag) with lateral offset 'dy'.
         If yaw_align, orient goal to face the tag.
@@ -203,7 +241,7 @@ class AprilTagController(Node):
     # ---------- Nav2 ----------
     def send_nav2_goal(self, goal_pose: PoseStamped):
         if not self.nav_client.wait_for_server(timeout_sec=2.0):
-            self.get_logger().error('NavigateToPose action server not available')
+            self.get_logger().error("NavigateToPose action server not available")
             return
 
         goal = NavigateToPose.Goal()
@@ -221,12 +259,12 @@ class AprilTagController(Node):
     def _on_goal_response(self, future):
         self.nav_goal_handle = future.result()
         if not self.nav_goal_handle or not self.nav_goal_handle.accepted:
-            self.get_logger().warn('Nav2 goal rejected')
+            self.get_logger().warn("Nav2 goal rejected")
             self.nav_active = False
             self.nav_goal_handle = None
             return
 
-        self.get_logger().info('Nav2 goal accepted')
+        self.get_logger().info("Nav2 goal accepted")
         result_future = self.nav_goal_handle.get_result_async()
         result_future.add_done_callback(self._on_nav_result)
 
@@ -234,34 +272,35 @@ class AprilTagController(Node):
         self.nav_active = False
         result = future.result()
         status = result.status if result else -1
-        self.get_logger().info(f'Nav2 result status: {status}')
+        self.get_logger().info(f"Nav2 result status: {status}")
         self.nav_goal_handle = None
 
         if status == 4:  # SUCCEEDED
             self._finish_and_call_gauge()
         else:
-            self.get_logger().warn('Nav2 failed; consider retry/backoff here')
+            self.get_logger().warn("Nav2 failed; consider retry/backoff here")
 
     def _finish_and_call_gauge(self):
-        self.get_logger().info('Target position reached (Nav2).')
+        self.get_logger().info("Target position reached (Nav2).")
         self.navigate = False
         self.call_gauge_read()
 
     def _emergency_stop(self):
         """Immediate stop: cancle Nav2 goal and spam zero cmd_vel."""
-        self.get_logger().warn('Emergency stop triggered!')
+        self.get_logger().warn("Emergency stop triggered!")
 
         # Call emergency stop service if available
-        if getattr(self, 'nav_goal_handle', None) and self.nav_goal_handle.accepted:
+        if getattr(self, "nav_goal_handle", None) and self.nav_goal_handle.accepted:
             try:
                 cancel_future = self.nav_goal_handle.cancel_goal_async()
-                cancel_future.add_done_callback(lambda f: self.get_logger().info('Nav2 goal cancelled'))
+                cancel_future.add_done_callback(
+                    lambda f: self.get_logger().info("Nav2 goal cancelled")
+                )
             except Exception as e:
-                self.get_logger().error(f'Failed to cancel Nav2 goal: {e}')
+                self.get_logger().error(f"Failed to cancel Nav2 goal: {e}")
 
         self.nav_active = False
         self.navigate = False
-
 
         # Spam zero cmd_vel to ensure robot stops
         zero = Twist()
@@ -269,7 +308,7 @@ class AprilTagController(Node):
             self.cmd_vel_pub.publish(zero)
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        self.get_logger().info('Robot stopped.')
+        self.get_logger().info("Robot stopped.")
 
     # ---------- Tag callbacks ----------
     def tag_callback(self, msg):
@@ -278,7 +317,6 @@ class AprilTagController(Node):
             # Log detection
             if det.id != self.target_tag_id:
                 continue
-            
 
             self.tag_detected = True
             self.last_detection_time = self.get_clock().now()
@@ -288,27 +326,115 @@ class AprilTagController(Node):
 
             try:
                 trans = self.tf_buffer.lookup_transform(
-                    self.odom_frame_id, camera_frame, rclpy.time.Time(),
-                    rclpy.duration.Duration(seconds=1.0)
+                    self.odom_frame_id,
+                    camera_frame,
+                    rclpy.time.Time(),
+                    rclpy.duration.Duration(seconds=1.0),
                 )
                 tag_pose_odom = do_transform_pose(tag_pose_stamped.pose.pose, trans)
 
                 self._set_tag_in_odom(tag_pose_odom)
                 self.publish_tag_transform()
 
-            except (tf2_ros.LookupException,
-                    tf2_ros.ExtrapolationException,
-                    tf2_ros.ConnectivityException) as e:
-                self.get_logger().warn(f'TF error (Isaac): {e}')
+            except (
+                tf2_ros.LookupException,
+                tf2_ros.ExtrapolationException,
+                tf2_ros.ConnectivityException,
+            ) as e:
+                self.get_logger().warn(f"TF error (Isaac): {e}")
 
+    def get_pose(self, camera_frame_id):
+        # Look up the pose from the tf buffer
+        try:
+            # self.get_logger().info(f"Looking up transform from {camera_frame_id} to {self.apriltag_lib_tag_frame_id}")
+            trans = self.tf_buffer.lookup_transform(
+                camera_frame_id, self.apriltag_lib_tag_frame_id, rclpy.time.Time()
+            )
+
+            pose = Pose()
+            pose.position = Point(
+                x=trans.transform.translation.x,
+                y=trans.transform.translation.y,
+                z=trans.transform.translation.z,
+            )
+            pose.orientation = Quaternion(
+                x=trans.transform.rotation.x,
+                y=trans.transform.rotation.y,
+                z=trans.transform.rotation.z,
+                w=trans.transform.rotation.w,
+            )
+            self.get_logger().warn(f"Pose: {pose}")
+            return pose
+        except tf2_ros.LookupException as e:
+            self.get_logger().warn(f"Could not find transform for AprilTag pose: {e}")
+            return None
+
+    def tag_callback_lite(self, msg):
+        """
+        Isaac ROS 'lite' AprilTag callback.
+
+        - Only uses TF + self.get_pose(...) (like the old CPU lite version),
+        instead of directly trusting the per-detection PoseWithCovariance.
+        """
+        for det in msg.detections:
+            if det.id != self.target_tag_id:
+                continue
+
+            self.tag_detected = True
+            self.last_detection_time = self.get_clock().now()
+
+            # Prefer the camera frame from the message / detection,
+            # fall back to optical frame if it's empty.
+            camera_frame = None
+
+            # AprilTagDetectionArray usually has a header, keep that as first choice
+            if hasattr(msg, "header") and msg.header.frame_id:
+                camera_frame = msg.header.frame_id
+            elif det.pose.header.frame_id:
+                camera_frame = det.pose.header.frame_id
+            else:
+                camera_frame = self.optical_frame_id
+
+            # Use your existing helper to get the tag pose in the camera frame
+            tag_pose = self.get_pose(camera_frame)
+            if tag_pose is None:
+                # nothing useful this cycle
+                return
+
+            try:
+                # Transform camera -> odom
+                trans = self.tf_buffer.lookup_transform(
+                    self.odom_frame_id,  # target (odom)
+                    camera_frame,  # source (camera)
+                    rclpy.time.Time(),  # latest
+                    rclpy.duration.Duration(seconds=1.0),
+                )
+
+                # tag_pose is a geometry_msgs/Pose in camera frame
+                tag_pose_odom = do_transform_pose(tag_pose, trans)
+
+                # Reuse your common logic to store tag_in_odom_frame, yaw, etc.
+                self._set_tag_in_odom(tag_pose_odom)
+                self.publish_tag_transform()
+
+                # Keep same behavior as before
+                self.position_locked = False
+
+            except (
+                tf2_ros.LookupException,
+                tf2_ros.ExtrapolationException,
+                tf2_ros.ConnectivityException,
+            ) as e:
+                self.get_logger().warn(f"TF error (Isaac lite): {e}")
 
     def _set_tag_in_odom(self, pose_in_odom: Pose):
-        self.tag_in_odom_frame = np.array([pose_in_odom.position.x,
-                                           pose_in_odom.position.y,
-                                           pose_in_odom.position.z])
+        self.tag_in_odom_frame = np.array(
+            [pose_in_odom.position.x, pose_in_odom.position.y, pose_in_odom.position.z]
+        )
         q = pose_in_odom.orientation
-        self.tag_orientation_in_odom = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
-                                                  1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        self.tag_orientation_in_odom = math.atan2(
+            2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        )
 
     # ---------- Control loop ----------
     def control_loop(self):
@@ -319,7 +445,9 @@ class AprilTagController(Node):
         now = self.get_clock().now()
         time_since_det = (now - self.last_detection_time).nanoseconds / 1e9
 
-        have_tag = (self.tag_detected and time_since_det < self.tag_timeout) or (self.tag_in_odom_frame is not None)
+        have_tag = (self.tag_detected and time_since_det < self.tag_timeout) or (
+            self.tag_in_odom_frame is not None
+        )
 
         if have_tag:
             if not self.nav_active and self.nav_goal_handle is None:
@@ -329,7 +457,9 @@ class AprilTagController(Node):
                 if goal_pose:
                     self.send_nav2_goal(goal_pose)
                 else:
-                    self.get_logger().warn('Could not build approach pose yet; waiting...')
+                    self.get_logger().warn(
+                        "Could not build approach pose yet; waiting..."
+                    )
         else:
             if not self.nav_active:
                 self.execute_search_behavior()
@@ -341,8 +471,8 @@ class AprilTagController(Node):
         t = (self.get_clock().now().nanoseconds / 1e9) % rotation_period
 
         cmd = Twist()
-        phase = 'rotate' if t < 1.0 else 'pause'
-        if phase == 'rotate':
+        phase = "rotate" if t < 1.0 else "pause"
+        if phase == "rotate":
             cmd.angular.z = 0.8
         # else: zeroed twist (stop)
 
@@ -350,14 +480,14 @@ class AprilTagController(Node):
 
         # de-spam logs: only print when phase flips
         if phase != self._last_search_phase:
-            self.get_logger().info(f'No tag detected, searching... ({phase})')
+            self.get_logger().info(f"No tag detected, searching... ({phase})")
             self._last_search_phase = phase
 
     # ---------- Gauge reader ----------
     def call_gauge_read(self):
         req = GaugeProcess.Request()
         req.process_mode = 1
-        self.get_logger().info('Requesting gauge read (process_mode=1)')
+        self.get_logger().info("Requesting gauge read (process_mode=1)")
         future = self.gauge_reader.call_async(req)
         future.add_done_callback(self.gauge_response_callback)
 
@@ -365,17 +495,17 @@ class AprilTagController(Node):
         try:
             resp = future.result()
             if resp is not None:
-                self.get_logger().info(f'Gauge response: {resp}')
+                self.get_logger().info(f"Gauge response: {resp}")
             else:
-                self.get_logger().error('Gauge response was None.')
+                self.get_logger().error("Gauge response was None.")
         except Exception as e:
-            self.get_logger().error(f'Gauge service call failed: {e}')
+            self.get_logger().error(f"Gauge service call failed: {e}")
 
     def _warn_if_gauge_unavailable_once(self):
         if self._warned_gauge:
             return
         if not self.gauge_reader.service_is_ready():
-            self.get_logger().warn('Gauge reader service not available yet.')
+            self.get_logger().warn("Gauge reader service not available yet.")
         self._warned_gauge = True
 
 
@@ -393,5 +523,5 @@ def main(args=None):
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -25,37 +25,41 @@ from launch.substitutions import LaunchConfiguration, Command, EnvironmentVariab
 
 
 def generate_launch_description():
-    on_exit = LaunchConfiguration('on_exit', default='shutdown')
+    on_exit = LaunchConfiguration("on_exit", default="shutdown")
     # Get the package share directory
-    package_dir = get_package_share_directory('apriltag_navigation')
+    package_dir = get_package_share_directory("apriltag_navigation")
 
     # Get the config file
     config_file = os.path.join(
-        package_dir, 'config', 'lite_apriltag_controller_params.yaml')
-    
+        package_dir, "config", "lite_apriltag_controller_params.yaml"
+    )
 
     rectify_node = ComposableNode(
-        package='image_proc',
-        plugin='image_proc::RectifyNode',
-        name='rectify',
-        namespace='apriltag',
-        remappings=[('image', '/camera/image_raw'),
-                    ('camera_info', '/camera/camera_info')],
+        package="image_proc",
+        plugin="image_proc::RectifyNode",
+        name="rectify",
+        namespace="apriltag",
+        remappings=[
+            ("image", "/camera/image_raw"),
+            ("camera_info", "/camera/camera_info"),
+        ],
     )
 
     apriltag_node = ComposableNode(
-        package='apriltag_ros',
-        plugin='AprilTagNode',
-        name='apriltag',
-        namespace='apriltag',
-        parameters=[{
-            'family': '36h11',
-            'size': 0.0766,
-        }],
+        package="apriltag_ros",
+        plugin="AprilTagNode",
+        name="apriltag",
+        namespace="apriltag",
+        parameters=[
+            {
+                "family": "36h11",
+                "size": 0.15,
+            }
+        ],
         remappings=[
-            ('image_rect', '/apriltag/image_rect'),
-            ('camera_info', '/camera/camera_info'),
-            ('tf', '/tf')
+            ("image_rect", "/apriltag/image_rect"),
+            ("camera_info", "/camera/camera_info"),
+            ("tf", "/tf"),
         ],
     )
 
@@ -78,27 +82,27 @@ def generate_launch_description():
     # )
 
     controller_node = Node(
-        package='apriltag_navigation',
-        executable='apriltag_controller',
-        name='apriltag_controller',
+        package="apriltag_navigation",
+        executable="apriltag_controller",
+        name="apriltag_controller",
         parameters=[config_file],
-        output='screen',
+        output="screen",
         on_exit=on_exit,
     )
 
     apriltag_container = ComposableNodeContainer(
-        package='rclcpp_components',
-        name='apriltag_container',
-        namespace='',
-        executable='component_container_mt',
+        package="rclcpp_components",
+        name="apriltag_container",
+        namespace="",
+        executable="component_container_mt",
         composable_node_descriptions=[
             rectify_node,
             # resize_node,
             apriltag_node,
         ],
-        output='screen',
+        output="screen",
         on_exit=on_exit,
     )
 
     return launch.LaunchDescription([apriltag_container, controller_node])
-    #return launch.LaunchDescription([apriltag_container])
+    # return launch.LaunchDescription([apriltag_container])
