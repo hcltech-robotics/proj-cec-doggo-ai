@@ -11,7 +11,7 @@ from cv_bridge import CvBridge
 from gauge_net.transforms import custom_transform
 from gauge_net_interface.msg import GaugeReading
 from gauge_net_interface.srv import GaugeProcess
-from go2_interfaces.msg import WebRtcReq
+from go2_interfaces.srv import SetBrightness
 import numpy as np
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -185,7 +185,6 @@ class GaugeReaderNode(Node):
             10,
             qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
-        self._flashlight_pub = self.create_publisher(WebRtcReq, "/webrtc_req", 10)
 
 
         # Service to define how many images are processed
@@ -195,6 +194,9 @@ class GaugeReaderNode(Node):
             'set_image_process_mode', 
             self.set_image_process_mode_callback        
         )
+
+        self._brightness_client_cb_group = MutuallyExclusiveCallbackGroup()
+        self._set_brightness_service_client = self.create_client(SetBrightness, '/set_brightness', callback_group=self._brightness_client_cb_group)
 
         # cv_bridge for image conversion.
         self._bridge = CvBridge()
@@ -211,17 +213,30 @@ class GaugeReaderNode(Node):
     def _set_flashlight(self, value: int):
         # clamp 0..10 to be safe
         v = max(0, min(10, int(value)))
+        
+        if not self._set_brightness_service_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().error('SetBrightness service not available, cannot set flashlight brightness.')
+            return
+        
+        request = SetBrightness.Request()
+        request.brightness = v
+        
+        # Call the service asynchronously
+        future = self._set_brightness_service_client.call_async(request)
+        
+        try:
+            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        except Exception as e:
+            self.get_logger().error(f'Exception during spin_until_future_complete for SetBrightness: {e}')
+            return
 
-        req = WebRtcReq()
-        req.id = 0  
-        req.topic = 'rt/api/vui/request'   
-        req.api_id = 1005
-        req.priority = 0  
-        req.parameter = json.dumps({"brightness": v})  
 
-        self.get_logger().info(f'Setting flashlight brightness to {v} | payload={req.parameter}')
-        self._flashlight_pub.publish(req)
-
+        if future.result() is not None:
+            self.get_logger().info(f'Set flashlight brightness to {v}.')
+        else:
+            self.get_logger().error('Failed to call SetBrightness service (Future result is None).')
+            return
+            
     def set_image_process_mode_callback(
         self, request: GaugeProcess.Request, response: GaugeProcess.Response
     ) -> GaugeProcess.Response:
