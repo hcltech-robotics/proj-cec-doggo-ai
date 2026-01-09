@@ -48,6 +48,29 @@ Both scripts create and configure a Conda environment with the appropriate depen
 
 The conda environments are called `omniverse-4.5` and `omniverse-5.1` respectively.
 
+## ROS2 Endpoints
+
+To run the Gauge Detection endpoint and additional visualization, run the following:
+
+1. Model endpoint: 
+  1. In a separate terminal from the project root, install the requirements.txt file in a virtual environment, activate:
+    1. `python3 -m venv venv`
+    1. `source venv/bin/activate`
+    1. `pip install -r requirements.txt`
+  1. run `download_checkpoints.sh` then run the following: `python model_server.py --token doggodoggo --detector-model checkpoints/gauge_detect.pth --reader-model checkpoints/gauge_reader.pt`
+1. ROS2 endpoints: in a separate terminal go to the (ros.ws)[../ros.ws] folder, build and run the launcher:
+  1. `rosdep install --from-paths src --ignore-src -r -y`
+  1. `pip install -r src/requirements.txt`
+  1. `source /opt/ros/humble/setup.sh && colcon build`
+  1. `ros2 launch gauge_net gauge_net_lite.launch.py use_math:=True`
+1. To visualize in Foxglove, view gauge image, detections, etc, run the following open separaet terminal and:
+  1. Source ROS: `source /opt/ros/humble/setup.sh`
+  1. Source the ros.ws install folder: `source install/setup.sh`
+  1. Start Foxglove 
+  1. Open connection `ws://localhost:8765`
+  1. Open the `Gauge Reading Dashboard.json` dashboard from this folder to visualize
+
+
 ## 🚀 Running the Simulation
 
 To launch the simulation, use one of the provided runner scripts (humble.sh or jazzy.sh) which activate the correct ROS2 environment and launch Isaac Sim.
@@ -88,18 +111,5 @@ topics:
 | `/quadruped/camera/camera_info` | `sensor_msgs/CameraInfo`  | Camera intrinsics |
 | `/tf`                           | `tf2_msgs/TFMessage`      | Transform tree    |
 
-## ROS2 Endpoints
 
-To run the additional ROS2 capabilities for gauge detection run the following:
 
-1. ROS2 endpoints: build the (ros.ws)[../ros.ws] folder with colcon and run `ros2 launch gauge_net gauge_net_lite.launch.py use_math:=True`
-1. Model endpoint: from the project root, install the requirements.txt file in a virtual environment, activate, run `download_checkpoints.sh` then run the following: `python model_server.py --token doggodoggo --detector-model checkpoints/gauge_detect.pth --reader-model checkpoints/gauge_reader.pt`
-
-## Foxglove integration
-
-To view gauge image, detections, etc in Foxglove, run the following:
-
-1. Source the ros.ws install folder: `source install/setup.sh`
-2. Install and run the foxglove bridge: `ros2 launch foxglove_bridge foxglove_bridge_launch.xml`
-3. Open the localhost connection
-4. Open the `Gauge Reading Dashboard.json` dashboard
