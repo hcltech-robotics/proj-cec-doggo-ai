@@ -8,6 +8,7 @@
 #
 
 
+import math
 from isaacsim import SimulationApp
 
 simulation_app = SimulationApp({"headless": False})
@@ -220,12 +221,16 @@ class SimulationWorld():
                 prim = define_prim("/World/Warehouse", "Xform")
                 asset_path = assets_root_path + "/Isaac/Environments/Simple_Warehouse/warehouse.usd"
                 prim.GetReferences().AddReference(asset_path)
-        elif environment == "jetty":
+        elif environment == "jetty" or environment == "jetty-latest":
             prim = get_prim_at_path("/World/Jetty")
 
             if not prim.IsValid():
                 prim = define_prim("/World/Jetty", "Xform")
-                asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v10.usd"
+                if environment == "jetty":
+                    asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v10.usd"
+                else:
+                    asset_path = "omniverse://nucleus.fortableau.com/Projects/jetty/jetty_and_gauge_v22.usd"
+
                 prim.GetReferences().AddReference(asset_path)
                 
         elif environment == "office":
@@ -285,6 +290,8 @@ class SimulationWorld():
     def spawn_location(self):
         if self.environment == "jetty":
             return np.array([97, -21.5, 12])
+        elif self.environment == "jetty-latest":
+            return np.array([93.85, -24.84, 12])
         elif self.environment == "office":
             return np.array([-3.0, -8.0, 0.47])
         else:
@@ -335,6 +342,23 @@ class Simulation():
         self.cameras = cameras
         
         self._sensor_paths = []
+
+
+        # Gauge animation state
+        # TODO: this should not be here, as it is Jetty related
+        self._gauge_path = "/World/Jetty/hcl_gauge_and_stand_new/manometer_100mm/needle_fat"
+        self._gauge_current = 0.0
+        self._gauge_target = 0.0
+        self._gauge_t = 0.0
+
+        self._gauge_next_change_time = 0.0
+
+        self._gauge_min = -90.0
+        self._gauge_max = 160.0
+
+        self._gauge_transition_speed = 1.5   # how fast needle moves to target
+        self._gauge_micro_noise = 0.5        # small ± jitter when settled
+
        
         # after stage is defined
         self._stage = omni.usd.get_context().get_stage()
@@ -664,6 +688,53 @@ class Simulation():
             command = np.array(linear_velocity) + np.array(angular_velocity)
             self.quadruped.forward(step_size, command)
 
+            # TODO: move to function
+            # -------------------------------
+            #   Dynamic Random Gauge Motion
+            # -------------------------------
+
+            needle_prim = self._stage.GetPrimAtPath(self._gauge_path)
+            if needle_prim.IsValid():
+                xform = UsdGeom.Xformable(needle_prim)
+
+                # Increase internal time counter
+                self._gauge_t += step_size
+
+                # Time to pick a new target?
+                if self._gauge_t >= self._gauge_next_change_time:
+                    # Pick new target in range
+                    self._gauge_target = random.uniform(self._gauge_min, self._gauge_max)
+
+                    # Next change in 1–3 seconds
+                    self._gauge_next_change_time = self._gauge_t + random.uniform(1.0, 3.0)
+
+                # Smoothly move the needle toward the target (first-order response)
+                diff = self._gauge_target - self._gauge_current
+                self._gauge_current += diff * self._gauge_transition_speed * step_size
+
+                # Add micro jitter when near target (looks very realistic)
+                if abs(diff) < 2.0:
+                    jitter = self._gauge_micro_noise * math.sin(self._gauge_t * 25)
+                else:
+                    jitter = 0.0
+
+                final_angle = self._gauge_current + jitter
+
+                # Apply roll rotation
+                ops = xform.GetOrderedXformOps()
+                rotate_op = None
+
+                for op in ops:
+                    if op.GetOpType() == UsdGeom.XformOp.TypeRotateXYZ:
+                        rotate_op = op
+                        break
+
+                if rotate_op is None:
+                    rotate_op = xform.AddRotateXYZOp(opSuffix="needleRoll")
+                    xform.SetXformOpOrder([rotate_op] + ops)
+
+
+                rotate_op.Set(Gf.Vec3f(0.0, final_angle, 0.0))
 
 class Go2Simulation(Simulation):
 
@@ -706,8 +777,8 @@ if __name__ == "__main__":
         "--env",
         type=str,
         default="default",
-        choices=["default", "warehouse", "jetty", "office"],
-        help="Environment to spawn the robot in. Valid options: default, warehouse, jetty, office."
+        choices=["default", "warehouse", "jetty", "jetty-latest", "office"],
+        help="Environment to spawn the robot in. Valid options: default, warehouse, jetty, jetty-latest, office."
     )
     parser.add_argument(
         "--quadruped",
