@@ -2,18 +2,20 @@
 
 import base64
 
-import requests
 import cv2
-import rclpy
+import requests
+
 from cv_bridge import CvBridge
+import rclpy
 from rclpy.node import Node
-from rclpy.qos import HistoryPolicy, ReliabilityPolicy, DurabilityPolicy
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, ReliabilityPolicy
 from rclpy.qos_overriding_options import QoSProfile
+from gauge_net_interface.msg import GaugeReading
+from gauge_net_interface.srv import GaugeProcess
 from sensor_msgs.msg import Image
 
 # from gauge_net.transforms import custom_transform
-from gauge_net_interface.msg import GaugeReading
-from gauge_net_interface.srv import GaugeProcess
+
 
 from .gauge_reader_parent import GaugeReaderParent
 

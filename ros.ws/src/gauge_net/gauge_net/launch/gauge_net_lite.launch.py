@@ -3,9 +3,9 @@ import os
 from ament_index_python.packages import get_package_share_directory
 import launch
 from launch.substitutions import LaunchConfiguration
+
+from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
-from launch_ros.actions import ComposableNodeContainer
-import launch_ros.actions
 
 
 def generate_launch_description():
@@ -169,7 +169,7 @@ def generate_launch_description():
 
     # Add gauge_reader node
     ld.add_action(
-        launch_ros.actions.Node(
+        Node(
             package=package_name,
             executable='gauge_reader_lite',
             name='gauge_reader',
@@ -187,7 +187,7 @@ def generate_launch_description():
     )
 
     ld.add_action(
-        launch_ros.actions.Node(
+        Node(
             package='teleop_twist_joy',
             executable='teleop_node',
             name='teleop_node',
@@ -205,12 +205,10 @@ def generate_launch_description():
     )
 
     ld.add_action(
-        launch_ros.actions.Node(
-            package='joy', executable='joy_node', name='joy_node', output='screen'
-        ),
+        Node(package='joy', executable='joy_node', name='joy_node', output='screen'),
     )
 
-    foxglove_bridge_node = launch_ros.actions.Node(
+    foxglove_bridge_node = Node(
         package='foxglove_bridge',
         executable='foxglove_bridge',
         name='foxglove_bridge',

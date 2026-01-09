@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
+
 import cv2
+from gauge_net_interface.msg import GaugeReading
+from gauge_net_interface.srv import GaugeProcess
 import math
 import numpy as np
 from rclpy.node import Node
-from gauge_net_interface.msg import GaugeReading
-from gauge_net_interface.srv import GaugeProcess
 
 
 class GaugeReaderParent(Node, ABC):
