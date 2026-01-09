@@ -9,7 +9,6 @@ from rclpy.action import ActionClient
 
 from geometry_msgs.msg import PoseStamped, TransformStamped, Twist
 from geometry_msgs.msg import Pose, Point, Quaternion
-from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
 from nav_msgs.msg import Odometry
 from nav2_msgs.action import NavigateToPose
 from std_srvs.srv import Trigger
@@ -42,7 +41,13 @@ class AprilTagController(Node):
         self.declare_parameter("optical_frame_id", "camera_color_optical_frame")
         self.declare_parameter("base_frame_id", "base_link")
         self.declare_parameter("odom_frame_id", "odom")
-        self.declare_parameter("use_isaac_apriltag", True)
+        self.declare_parameter("backend", "cpu")
+        self.declare_parameter("control_mode", "simple")  # or "nav2"
+        self.declare_parameter("kp_dist", 0.5)
+        self.declare_parameter("kp_yaw", 1.0)
+        self.declare_parameter("kd_yaw", 0.1)
+        self.declare_parameter("max_lin", 0.3)  # m/s
+        self.declare_parameter("max_ang", 0.5)  # rad/s
 
         # Snapshot parameter values
         self.target_tag_id = self.get_parameter("target_tag_id").value
@@ -55,11 +60,15 @@ class AprilTagController(Node):
         self.optical_frame_id = self.get_parameter("optical_frame_id").value
         self.base_frame_id = self.get_parameter("base_frame_id").value
         self.odom_frame_id = self.get_parameter("odom_frame_id").value
-        self.use_isaac_apriltag = (
-            self.get_parameter("use_isaac_apriltag").get_parameter_value().bool_value
-        )
+        self.backend = self.get_parameter("backend").value
+        self.control_mode = self.get_parameter("control_mode").value
+        self.kp_dist = self.get_parameter("kp_dist").value
+        self.kp_yaw = self.get_parameter("kp_yaw").value
+        self.kd_yaw = self.get_parameter("kd_yaw").value
+        self.max_lin = self.get_parameter("max_lin").value
+        self.max_ang = self.get_parameter("max_ang").value
 
-        if self.use_isaac_apriltag:
+        if self.backend == "gpu":
             from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
 
             self.detection_type = AprilTagDetectionArray
@@ -71,7 +80,7 @@ class AprilTagController(Node):
             self.detections_topic = "/apriltag/detections"
 
         tag_callback = (
-            self.tag_callback if self.use_isaac_apriltag else self.tag_callback_lite
+            self.tag_callback if self.backend == "gpu" else self.tag_callback_lite
         )
         # ---------- Publishers / Subscribers ----------
         self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
@@ -105,9 +114,11 @@ class AprilTagController(Node):
         self.create_timer(1.0, self._warn_if_gauge_unavailable_once)
         self._warned_gauge = False
 
-        self.nav_client = ActionClient(self, NavigateToPose, "/navigate_to_pose")
-        self.nav_goal_handle = None
-        self.nav_active = False
+        if self.control_mode == "nav2":
+            self.nav_client = ActionClient(self, NavigateToPose, "/navigate_to_pose")
+            self.nav_goal_handle = None
+            self.nav_active = False
+
         self.emergency_stop_srv = self.create_service(
             Trigger, "apriltag_controller/stop", self.emergency_stop_callback
         )
@@ -130,6 +141,9 @@ class AprilTagController(Node):
         self.tag_in_odom_frame: np.ndarray | None = None  # [x, y, z]
         self.tag_orientation_in_odom: float | None = None  # yaw
         self.current_target_pose: PoseStamped | None = None
+        self.prev_yaw_error = None
+        self.prev_ctrl_time = self.get_clock().now()
+        self.camera_offset_x = None 
 
         # Control loop
         self.timer = self.create_timer(0.1, self.control_loop)  # 10 Hz
@@ -164,6 +178,7 @@ class AprilTagController(Node):
             goal = self.build_approach_goal_pose_in_odom(
                 dx=self.desired_distance, dy=self.desired_y_offset, yaw_align=True
             )
+            self.get_logger().debug(f"Built goal: {goal}")
             if goal:
                 self.current_target_pose = goal
                 self.publish_target_transform()
@@ -363,7 +378,6 @@ class AprilTagController(Node):
                 z=trans.transform.rotation.z,
                 w=trans.transform.rotation.w,
             )
-            self.get_logger().warn(f"Pose: {pose}")
             return pose
         except tf2_ros.LookupException as e:
             self.get_logger().warn(f"Could not find transform for AprilTag pose: {e}")
@@ -436,12 +450,33 @@ class AprilTagController(Node):
             2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         )
 
+    def _ensure_camera_offset(self):
+        if self.camera_offset_x is not None:
+            return
+
+        try:
+            # base_link → camera (front_camera)
+            trans = self.tf_buffer.lookup_transform(
+                self.base_frame_id,
+                self.optical_frame_id,  # front_camera from params
+                rclpy.time.Time(),      # latest
+                rclpy.duration.Duration(seconds=1.0),
+            )
+            self.camera_offset_x = trans.transform.translation.x
+            self.get_logger().info(
+                f"Camera offset along X (base_link → {self.optical_frame_id}) = {self.camera_offset_x:.3f} m"
+            )
+        except Exception as e:
+            self.get_logger().warn(f"Could not get camera offset TF: {e}")
+            # Fallback: assume zero so it still runs
+            self.camera_offset_x = 0.0
+
+
     # ---------- Control loop ----------
     def control_loop(self):
         if not self.navigate:
             return
 
-        # freshness
         now = self.get_clock().now()
         time_since_det = (now - self.last_detection_time).nanoseconds / 1e9
 
@@ -449,20 +484,105 @@ class AprilTagController(Node):
             self.tag_in_odom_frame is not None
         )
 
+        # --- Mode: simple servo ---
+        if self.control_mode == "simple":
+            if have_tag:
+                self.simple_servo_step()
+            else:
+                self.execute_search_behavior()
+            return
+
+        # --- Mode: Nav2 ---
         if have_tag:
             if not self.nav_active and self.nav_goal_handle is None:
                 goal_pose = self.build_approach_goal_pose_in_odom(
-                    dx=self.desired_distance, dy=self.desired_y_offset, yaw_align=True
+                    dx=self.desired_distance,
+                    dy=self.desired_y_offset,
+                    yaw_align=True,
                 )
                 if goal_pose:
                     self.send_nav2_goal(goal_pose)
-                else:
-                    self.get_logger().warn(
-                        "Could not build approach pose yet; waiting..."
-                    )
         else:
             if not self.nav_active:
                 self.execute_search_behavior()
+
+        
+    def simple_servo_step(self):
+        self._ensure_camera_offset()
+
+        try:
+            trans = self.tf_buffer.lookup_transform(
+                self.base_frame_id,
+                self.tag_frame_id,
+                rclpy.time.Time(seconds=0), # Latest time
+                rclpy.duration.Duration(seconds=0.5), # WAIT up to 0.5s for the tag to appear
+            )
+        except Exception as e:
+            self.get_logger().warn(f"Tag lost (TF lookup failed): {e}")
+            self.tag_detected = False # Update state so we switch to search mode if needed
+            self._publish_zero_cmd()
+            return
+
+        x = trans.transform.translation.x
+        y = trans.transform.translation.y
+
+        forward_cam = x - self.camera_offset_x
+
+        # Errors
+        e_dist = forward_cam - self.desired_distance
+        e_yaw = math.atan2(y, x)
+
+        # D-term
+        now = self.get_clock().now()
+        dt = (now - self.prev_ctrl_time).nanoseconds / 1e9
+        self.prev_ctrl_time = now
+
+        if dt <= 0 or self.prev_yaw_error is None:
+            d_yaw = 0.0
+        else:
+            d_yaw = (e_yaw - self.prev_yaw_error) / dt
+
+        self.prev_yaw_error = e_yaw
+
+        # Control (P-Controller)
+        lin = self.kp_dist * e_dist
+        ang = self.kp_yaw * e_yaw + self.kd_yaw * d_yaw
+        
+
+        min_move_speed = 0.175 
+        
+        if abs(lin) > 0.01: 
+            if abs(lin) < min_move_speed:
+                lin = min_move_speed * (1.0 if lin > 0 else -1.0)
+
+        if abs(e_dist) < self.position_threshold:
+            lin = 0.0
+            
+        if abs(e_yaw) < self.angle_threshold:
+            ang = 0.0
+            self.get_logger().info("Angle error within threshold, stopping angular movement.")
+
+        lin = max(-self.max_lin, min(self.max_lin, lin))
+        ang = max(-self.max_ang, min(self.max_ang, ang))
+
+        # Publish
+        cmd = Twist()
+        cmd.linear.x = float(lin)
+        cmd.angular.z = float(ang)
+        self.cmd_vel_pub.publish(cmd)
+
+        if abs(e_dist) < self.position_threshold and abs(e_yaw) < self.angle_threshold:
+            self.get_logger().info("Reached desired tag pose.")
+            self.navigate = False
+            self._publish_zero_cmd()
+            self.call_gauge_read()
+
+
+
+    def _publish_zero_cmd(self):
+        zero = Twist()
+        self.cmd_vel_pub.publish(zero)
+
 
     def execute_search_behavior(self):
         """Simple rotate-pause scan when tag is lost."""

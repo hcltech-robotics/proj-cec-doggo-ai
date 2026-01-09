@@ -1,13 +1,36 @@
 apriltag_controller:
   ros__parameters:
+    # --- Tag selection ---
     target_tag_id: 0
-    desired_distance: 1.0           # meters in front of tag
-    desired_y_offset: 0.0           # meters left/right from center
-    desired_yaw: 0.0                # radians, desired final yaw relative to tag
-    position_threshold: 0.25        # meters, position lock tolerance
-    angle_threshold: 0.25           # radians, yaw lock tolerance
-    tag_timeout: 2.0                # seconds before considering tag lost
+
+    # --- Desired final pose relative to tag ---
+    desired_distance: 0.5        # meters forward of the tag
+    desired_y_offset: 0.0        # meters lateral (left +, right -)
+    desired_yaw: 0.0             # rad, unused unless you add yaw alignment
+
+    # --- Thresholds (used for completion logic) ---
+    position_threshold: 0.10    # meters
+    angle_threshold: 0.10        # radians
+
+    # --- Camera & Frames ---
     optical_frame_id: front_camera
     base_frame_id: base_link
     odom_frame_id: odom
-    use_isaac_apriltag: true        # set false to use non-Isaac AprilTag messages
+
+    # --- Tag freshness ---
+    tag_timeout: 2.0             # seconds
+
+    # --- Backend selection ---
+    backend: "cpu"               # "cpu" or "gpu" (Isaac)
+
+    # --- Control mode ---
+    control_mode: "simple"       # "simple" or "nav2"
+
+    # --- Servo control gains ---
+    kp_dist: 0.5                 # proportional gain for forward distance
+    kp_yaw:  1.0                 # proportional gain for angle correction
+    kd_yaw:  0.1                 # derivative term for angle smoothing
+
+    # --- Speed limits ---
+    max_lin: 0.5                 # m/s max forward speed
+    max_ang: 0.5                 # rad/s max rotational speed

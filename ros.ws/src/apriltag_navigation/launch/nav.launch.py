@@ -1,53 +1,98 @@
-# SPDX-FileCopyrightText: NVIDIA CORPORATION & AFFILIATES
-# Copyright (c) 2021-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-# SPDX-License-Identifier: Apache-2.0
-
 import os
 
 from ament_index_python.packages import get_package_share_directory
+
 import launch
-from launch_ros.actions import ComposableNodeContainer, Node
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import PathJoinSubstitution
+
+from launch_ros.actions import (
+    Node,
+    ComposableNodeContainer,
+    LoadComposableNodes,
+)
 from launch_ros.descriptions import ComposableNode
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    # backend: cpu | gpu
+    backend = LaunchConfiguration('backend')
 
-    # Get the package share directory
-    package_dir = get_package_share_directory("apriltag_navigation")
+    declare_backend_arg = DeclareLaunchArgument(
+        'backend',
+        default_value='cpu',
+        description='AprilTag detector backend: "cpu" (apriltag_ros) or "gpu" (isaac_ros_apriltag)',
+    )
 
-    # Get the config file
-    config_file = os.path.join(package_dir, "config", "apriltag_controller_params.yaml")
+    # Conditions
+    use_cpu_backend = PythonExpression([
+        "'",
+        backend,
+        "' == 'cpu'"
+    ])
 
-    # rectify_node = ComposableNode(
-    #     package='isaac_ros_image_proc',
-    #     plugin='nvidia::isaac_ros::image_proc::RectifyNode',
-    #     name='rectify',
-    #     namespace='apriltag',
-    #     parameters=[{
-    #         'output_width': 1280,
-    #         'output_height': 720,
-    #     }],
-    #     remappings=[('image_raw', '/camera/image_raw'),
-    #                 ('camera_info', '/camera/camera_info')]
-    # )
+    use_gpu_backend = PythonExpression([
+        "'",
+        backend,
+        "' == 'gpu'"
+    ])
 
-    apriltag_node = ComposableNode(
+    # CPU-based pipeline: image_proc + apriltag_ros
+    rectify_cpu_node = ComposableNode(
+        package="image_proc",
+        plugin="image_proc::RectifyNode",
+        name="rectify_cpu",
+        namespace="apriltag",
+        remappings=[
+            ("image", "/camera/image_raw"),
+            ("camera_info", "/camera/camera_info"),
+            ("image_rect", "/apriltag/image_rect"),
+        ],
+    )
+
+    apriltag_cpu_node = ComposableNode(
+        package="apriltag_ros",
+        plugin="AprilTagNode",
+        name="apriltag_cpu",
+        namespace="apriltag",
+        parameters=[
+            {
+                "family": "36h11",
+                "size": 0.08,
+            }
+        ],
+        remappings=[
+            ("image_rect", "/apriltag/image_rect"),
+            ("camera_info", "/camera/camera_info"),
+            ("tf", "/tf"),
+        ],
+    )
+
+    # GPU-based pipeline: isaac_ros_image_proc + isaac_ros_apriltag
+    rectify_gpu_node = ComposableNode(
+        package='isaac_ros_image_proc',
+        plugin='nvidia::isaac_ros::image_proc::RectifyNode',
+        name='rectify_gpu',
+        namespace='apriltag',
+        parameters=[{
+            'output_width': 1280,
+            'output_height': 720,
+        }],
+        remappings=[
+            ('image_raw', '/camera/image_raw'),
+            ('camera_info', '/camera/camera_info'),
+            ('image_rect', '/apriltag/image_rect'),
+        ],
+    )
+
+    apriltag_gpu_node = ComposableNode(
         package="isaac_ros_apriltag",
         plugin="nvidia::isaac_ros::apriltag::AprilTagNode",
-        name="apriltag",
+        name="apriltag_gpu",
         namespace="apriltag",
         parameters=[
             {
@@ -56,11 +101,48 @@ def generate_launch_description():
             }
         ],
         remappings=[
-            ("image", "/camera/image_raw"),
+            ("image", "/apriltag/image_rect"),
             ("camera_info", "/camera/camera_info"),
             ("tf", "/tf"),
         ],
     )
+
+    # Container: empty at start, we load into it dynamically
+    apriltag_container = ComposableNodeContainer(
+        package="rclcpp_components",
+        name="apriltag_container",
+        namespace="",
+        executable="component_container_mt",
+        composable_node_descriptions=[],
+        output="screen",
+    )
+
+    # Conditionally load CPU nodes
+    load_cpu_nodes = LoadComposableNodes(
+        target_container='apriltag_container',
+        composable_node_descriptions=[
+            rectify_cpu_node,
+            apriltag_cpu_node,
+        ],
+        condition=IfCondition(use_cpu_backend),
+    )
+
+    # Conditionally load GPU nodes
+    load_gpu_nodes = LoadComposableNodes(
+        target_container='apriltag_container',
+        composable_node_descriptions=[
+            rectify_gpu_node,
+            apriltag_gpu_node,
+        ],
+        condition=IfCondition(use_gpu_backend),
+    )
+
+    # Controller node config
+    config_file = PathJoinSubstitution([
+        FindPackageShare('apriltag_navigation'),
+        'config',
+        'apriltag_controller_params.yaml',
+    ])
 
     controller_node = Node(
         package="apriltag_navigation",
@@ -70,16 +152,10 @@ def generate_launch_description():
         output="screen",
     )
 
-    apriltag_container = ComposableNodeContainer(
-        package="rclcpp_components",
-        name="apriltag_container",
-        namespace="",
-        executable="component_container_mt",
-        composable_node_descriptions=[
-            # rectify_node,
-            apriltag_node,
-        ],
-        output="screen",
-    )
-
-    return launch.LaunchDescription([apriltag_container, controller_node])
+    return LaunchDescription([
+        declare_backend_arg,
+        apriltag_container,
+        load_cpu_nodes,
+        load_gpu_nodes,
+        controller_node,
+    ])
