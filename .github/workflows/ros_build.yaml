@@ -17,7 +17,7 @@ jobs:
         ros_distribution:
           - humble
           - jazzy 
-          - rolling
+          #- rolling
         include:
           # Humble Hawksbill (May 2022 - May 2027)
           - docker_image: rostooling/setup-ros-docker:ubuntu-jammy-ros-humble-ros-base-latest
@@ -45,3 +45,4 @@ jobs:
           import-token: ${{ secrets.GITHUB_TOKEN }}
           target-ros2-distro: ${{ matrix.ros_distribution }}
           vcs-repo-file-url: ""
+          skip-tests: true

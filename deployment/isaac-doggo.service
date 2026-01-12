@@ -1,0 +1,16 @@
+[Unit]
+Description=Isaac ROS Application
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStart=docker run --rm --privileged --network host --ipc=host -v /home/jetson/.bash_history:/home/admin/.bash_history -v /tmp/.X11-unix:/tmp/.X11-unix -v /home/jetson/.Xauthority:/home/admin/.Xauthority:rw -e DISPLAY -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all -e ROS_DOMAIN_ID -e USER -e ISAAC_ROS_WS=/workspaces/isaac_ros-dev -e HOST_USER_UID=1000 -e HOST_USER_GID=1000 -v /usr/bin/tegrastats:/usr/bin/tegrastats -v /tmp/:/tmp/ -v /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra -v /usr/src/jetson_multimedia_api:/usr/src/jetson_multimedia_api --pid=host -v /usr/share/vpi3:/usr/share/vpi3 -v /dev/input:/dev/input -v /run/jtop.sock:/run/jtop.sock:ro -v /home/jetson/workspaces/isaac_ros-dev/:/workspaces/isaac_ros-dev -v /etc/localtime:/etc/localtime:ro --name isaac_ros_dev-aarch64-container --runtime nvidia --entrypoint /usr/local/bin/scripts/workspace-entrypoint.sh --workdir /workspaces/isaac_ros-dev isaac_ros_dev-aarch64 /workspaces/isaac_ros-dev/supervisord.sh
+
+[Install]
+WantedBy=multi-user.target
+
+
+

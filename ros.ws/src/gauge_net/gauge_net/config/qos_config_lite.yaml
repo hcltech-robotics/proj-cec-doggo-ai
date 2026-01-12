@@ -6,14 +6,14 @@
           publisher:
             reliability: reliable
             history: keep_last
-            depth: 5
+            depth: 10
         /detections:
           subscription:
             reliability: reliable
             history: keep_last
-            depth: 5
+            depth: 10
       image_stream:
-        reliability: best_effort
+        reliability: reliable
         history: keep_last
-        depth: 1
+        depth: 10
 

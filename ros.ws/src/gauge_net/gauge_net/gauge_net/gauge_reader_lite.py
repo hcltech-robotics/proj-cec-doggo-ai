@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 
-import os
+import base64
+
+import cv2
+import requests
 
 from cv_bridge import CvBridge
-from gauge_net.transforms import custom_transform
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, ReliabilityPolicy
+from rclpy.qos_overriding_options import QoSProfile
 from gauge_net_interface.msg import GaugeReading
 from gauge_net_interface.srv import GaugeProcess
-import rclpy
-from rclpy.qos import HistoryPolicy, ReliabilityPolicy
-from rclpy.qos_overriding_options import QoSOverridingOptions, QoSProfile
 from sensor_msgs.msg import Image
-import torch
-import torchvision.transforms as transforms
+
+# from gauge_net.transforms import custom_transform
+
+
 from .gauge_reader_parent import GaugeReaderParent
 
 
@@ -19,10 +24,10 @@ class GaugeReaderNode(GaugeReaderParent):
     def __init__(self):
         self._namespace = 'gauge_reader'
         self._node_name = 'gauge_reader'
-        super().__init__(self._node_name, namespace=self._namespace)
+        Node.__init__(self, self._node_name, namespace=self._namespace)
 
         # Use the GPU if available.
-        self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Declare and get node parameters.
         self.declare_parameters(
@@ -30,8 +35,8 @@ class GaugeReaderNode(GaugeReaderParent):
             parameters=[
                 ('use_math', True),
                 ('image_topic', '/apriltag/image_rect'),
-                ('detector_model_file', ''),
-                ('reader_model_file', ''),
+                ('model_server_url', ''),
+                ('token', ''),
                 ('min_gauge_score', 0.99),
                 ('min_needle_score', 0.95),
                 ('scaling_min', 0.0),
@@ -43,107 +48,55 @@ class GaugeReaderNode(GaugeReaderParent):
         )
 
         self._use_math_reading = (
-            self.get_parameter(f'{self._node_name}.use_math')
+            self.get_parameter(f'{self._namespace}.use_math')
             .get_parameter_value()
             .bool_value
         )
         self._image_topic = (
-            self.get_parameter(f'{self._node_name}.image_topic')
+            self.get_parameter(f'{self._namespace}.image_topic')
             .get_parameter_value()
             .string_value
         )
 
         self.get_logger().info(f'Image Topic: {self._image_topic}')
         self._min_gauge_score = (
-            self.get_parameter(f'{self._node_name}.min_gauge_score')
+            self.get_parameter(f'{self._namespace}.min_gauge_score')
             .get_parameter_value()
             .double_value
         )
         self._min_needle_score = (
-            self.get_parameter(f'{self._node_name}.min_needle_score')
+            self.get_parameter(f'{self._namespace}.min_needle_score')
             .get_parameter_value()
             .double_value
         )
         self._scaling_min = (
-            self.get_parameter(f'{self._node_name}.scaling_min')
+            self.get_parameter(f'{self._namespace}.scaling_min')
             .get_parameter_value()
             .double_value
         )
         self._scaling_max = (
-            self.get_parameter(f'{self._node_name}.scaling_max')
+            self.get_parameter(f'{self._namespace}.scaling_max')
             .get_parameter_value()
             .double_value
         )
-        detector_model_path = (
-            self.get_parameter(f'{self._node_name}.detector_model_file')
+        self.model_server_url = (
+            self.get_parameter(f'{self._namespace}.model_server_url')
             .get_parameter_value()
             .string_value
         )
-        reader_model_path = (
-            self.get_parameter(f'{self._node_name}.reader_model_file')
+        self.token = (
+            self.get_parameter(f'{self._namespace}.token')
             .get_parameter_value()
             .string_value
         )
         image_reliability = self.get_parameter(
-            f'{self._node_name}.image_stream.reliability'
+            f'{self._namespace}.image_stream.reliability'
         ).value
         image_history = self.get_parameter(
-            f'{self._node_name}.image_stream.history'
+            f'{self._namespace}.image_stream.history'
         ).value
-        image_depth = self.get_parameter(f'{self._node_name}.image_stream.depth').value
-
-        if not os.path.isfile(detector_model_path):
-            self.get_logger().error(
-                f'Detector model file not found: {detector_model_path}'
-            )
-            raise FileNotFoundError(f'Missing detector model: {detector_model_path}')
-
-        if not os.path.isfile(reader_model_path) and not self._use_math_reading:
-            self.get_logger().error(f'Reader model file not found: {reader_model_path}')
-            raise FileNotFoundError(f'Missing reader model: {reader_model_path}')
-
-        # Load the detector model.
-        import torchvision
-        from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-
-        self._detector_model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(
-            num_classes=3
-        )
-        in_features = self._detector_model.roi_heads.box_predictor.cls_score.in_features
-        self._detector_model.roi_heads.box_predictor = FastRCNNPredictor(in_features, 3)
-        self._detector_model.load_state_dict(
-            torch.load(
-                detector_model_path, map_location=self._device, weights_only=True
-            )
-        )
-        self._detector_model.eval()
-        self._detector_model.to(self._device)
-
-        # Load the reader model.
-        if not self._use_math_reading:
-            self._reader_model = torch.jit.load(
-                reader_model_path, map_location=self._device
-            )
-            self._reader_model.eval()
-
-        # Image processing pipeline for the detector.
-        self._detector_transform = transforms.Compose(
-            [
-                transforms.ToPILImage(),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
-            ]
-        )
-
-        # Image processing pipeline for the reader.
-        self._reader_transform = transforms.Compose(
-            [
-                custom_transform.CLAHEPreprocess(),
-                custom_transform.ResizeWithPaddingAndBBox(),
-            ]
-        )
+        image_depth = self.get_parameter(f'{self._namespace}.image_stream.depth').value
+        self.get_logger().info(str(self._use_math_reading))
 
         # Setting up QoS profile for the image subscriber.
         RELIABILITY_MAP = {
@@ -155,14 +108,32 @@ class GaugeReaderNode(GaugeReaderParent):
             'keep_all': HistoryPolicy.KEEP_ALL,
             'keep_last': HistoryPolicy.KEEP_LAST,
         }
+        self.get_logger().info(
+            f'Image QoS settings - Reliability: {image_reliability}, '
+            + 'History: {image_history}, Depth: {image_depth}'
+        )
 
         image_qos_profile = QoSProfile(
             reliability=RELIABILITY_MAP.get(
                 image_reliability, ReliabilityPolicy.RELIABLE
             ),
             history=HISTORY_MAP.get(image_history, HistoryPolicy.KEEP_LAST),
+            durability=DurabilityPolicy.VOLATILE,
             depth=image_depth,
         )
+
+        # self._detector_transform = transforms.Compose(
+        #     [
+        #         transforms.ToPILImage(),
+        #         transforms.ToTensor(),
+        #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        #     ]
+        # )
+
+        # # Image processing pipeline for the reader.
+        # self._reader_transform = transforms.Compose(
+        #     [custom_transform.CLAHEPreprocess(), custom_transform.ResizeWithPaddingAndBBox()]
+        # )
 
         # Subscribers and Publishers:
         # - Subscribing to the incoming image.
@@ -185,25 +156,25 @@ class GaugeReaderNode(GaugeReaderParent):
             Image,
             'gauge_image',
             10,
-            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+            # qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         self._proc_gauge_pub = self.create_publisher(
             Image,
             'processed_gauge_image',
             10,
-            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+            # qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         self._gauge_reading_pub = self.create_publisher(
             GaugeReading,
             'gauge_reading',
             10,
-            qos_overriding_options=QoSOverridingOptions.with_default_policies(),
+            # qos_overriding_options=QoSOverridingOptions.with_default_policies(),
         )
 
         # Service to define how many images are processed
-        self._process_mode = GaugeProcess.Request.MODE_DO_NOTHING
+        self._process_mode = GaugeProcess.Request.MODE_CONTINUOUS_PROCESSING
         self._image_process_mode_srv = self.create_service(
             GaugeProcess, 'set_image_process_mode', self.set_image_process_mode_callback
         )
@@ -214,77 +185,49 @@ class GaugeReaderNode(GaugeReaderParent):
         self.get_logger().info('GaugeReader Node Started')
 
     def detect(self, cv_image):
-        # Process the image for the detector model.
-        image_tensor = self._detector_transform(cv_image).to(self._device)
-        self.get_logger().info(
-            f'Calling detector model with image tensor: {image_tensor.shape}'
+        _, buf = cv2.imencode('.jpg', cv_image)
+        b64 = base64.b64encode(buf).decode('utf-8')
+        headers = {'Authorization': f'Bearer {self.token}'}
+        r = requests.post(
+            self.model_server_url + '/detect', json={'image': b64}, headers=headers
         )
-        with torch.no_grad():
-            detections = self._detector_model([image_tensor])
-
-        self.get_logger().info(f'Detections: {detections}')
-
-        # Extract detections, boxes, and scores
-        boxes = detections[0]['boxes']
-        scores = detections[0]['scores']
-        labels = detections[0]['labels']
-
-        best_detection = {
-            'gauge': {'bbox': None, 'score': 0.0},
-            'needle': {'bbox': None, 'score': 0.0},
-        }
-
-        # Find the detection with highest probability (score) for both the needle and the gauge.
-        for box, score, label in zip(boxes, scores, labels):
-            if label == 1 and score > best_detection['gauge']['score']:
-                best_detection['gauge']['bbox'] = box
-                best_detection['gauge']['score'] = score
-            elif label == 2 and score > best_detection['needle']['score']:
-                best_detection['needle']['bbox'] = box
-                best_detection['needle']['score'] = score
-
-        return best_detection
-
-    def read(self, gauge_image, needle_bbox):
-        try:
-            # Transform the image to a tensor
-            gauge_tensor = (
-                transforms.ToTensor()(gauge_image).unsqueeze(0).to(self._device)
+        if r.status_code == 200:
+            return r.json()
+        else:
+            self.get_logger().error(
+                f'Error while calling detect: {r.status_code} - {r.text}'
             )
-            bbox_tensor = (
-                torch.tensor(needle_bbox, dtype=torch.float32)
-                .unsqueeze(0)
-                .to(self._device)
+            raise Exception(f'Error while calling detect: {r.status_code} - {r.text}')
+
+    def read(self, crop, bbox):
+        self.get_logger().info(f'Calling read on bbox: {bbox}')
+        self.get_logger().info(f'Crop shape: {crop.shape}')
+        _, buf = cv2.imencode('.jpg', crop)
+        b64 = base64.b64encode(buf).decode('utf-8')
+        headers = {'Authorization': f'Bearer {self.token}'}
+        r = requests.post(
+            self.model_server_url + '/read',
+            json={'image': b64, 'bbox': bbox},
+            headers=headers,
+        )
+
+        if r.status_code == 200:
+            return r.json().get('reading', 0.0)
+        else:
+            self.get_logger().error(
+                f'Error while calling read: {r.status_code} - {r.text}'
             )
-
-            # Call the reader model
-            with torch.no_grad():
-                output = self._reader_model(gauge_tensor, bbox_tensor)
-
-            # Get the gauge reading
-            gauge_reading = output.item()
-
-            # Validate the reading is within expected range
-            if not 0.0 <= gauge_reading <= 1.0:
-                self.get_logger().warning(
-                    f'Model returned out-of-range value: {gauge_reading}, clamping to [0,1]'
-                )
-                gauge_reading = max(0.0, min(1.0, gauge_reading))
-
-            return gauge_reading
-
-        except Exception as e:
-            self.get_logger().error(f'Unexpected error in gauge reading: {str(e)}')
-            return 0.0
+            raise Exception(f'Error while calling detect: {r.status_code} - {r.text}')
 
     def image_callback(self, msg):
+        self.get_logger().info('Received image for processing.')
         if self._process_mode == GaugeProcess.Request.MODE_DO_NOTHING:
             return
         elif self._process_mode == GaugeProcess.Request.MODE_PROCESS_ONE_IMAGE:
             self._process_mode = GaugeProcess.Request.MODE_DO_NOTHING
 
         cv_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
-        detection_result = self.detect_gauge(cv_image)
+        detection_result = self.detect(cv_image)
 
         # Do some checks on the detection results
         if detection_result['gauge']['score'] < self._min_gauge_score:
@@ -326,7 +269,7 @@ class GaugeReaderNode(GaugeReaderParent):
             trans_gauge, trans_needle = self._transform_data(cropped_gauge, needle_bbox)
             self._publish_transformed_image(trans_gauge.copy(), trans_needle, header)
 
-            gauge_reading = self._read_gauge_value(trans_gauge, trans_needle)
+            gauge_reading = self.read(trans_gauge, trans_needle)
 
         # Publish the gauge reading
         self._publish_gauge_reading(gauge_reading, header)

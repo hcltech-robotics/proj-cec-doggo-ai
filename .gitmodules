@@ -1,0 +1,7 @@
+[submodule "ros.ws/src/go2_ros2_sdk"]
+	path = ros.ws/src/go2_ros2_sdk
+	url = https://github.com/abizovnuralem/go2_ros2_sdk.git
+	branch = feat/obstacle_avoid
+[submodule "web"]
+	path = web
+	url = https://github.com/hcltech-robotics/proj-cec-doggo.git
