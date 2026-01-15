@@ -9,9 +9,14 @@
 
 
 import math
-from isaacsim import SimulationApp
+import os
 
-simulation_app = SimulationApp({'headless': False})
+simulation_app = None
+if os.getenv('STANDALONE', 'False').lower() in ('true', '1', 't'):
+    from isaacsim import SimulationApp
+
+    headless = os.getenv('HEADLESS', 'False').lower() in ('true', '1', 't')
+    simulation_app = SimulationApp({'headless': headless})
 
 # Standard library imports
 import io
@@ -27,11 +32,11 @@ import carb
 import omni
 import omni.usd
 import omni.graph.core as og
-import omni.isaac.core.utils.stage as stage_utils
+import isaacsim.core.utils.stage as stage_utils
 
 from omni.isaac.core import World
-from omni.isaac.core.articulations import Articulation
-from omni.isaac.core.objects import DynamicCuboid, DynamicCone, DynamicCapsule
+from isaacsim.core.prims import SingleArticulation
+from isaacsim.core.api.objects import DynamicCuboid, DynamicCone, DynamicCapsule
 from isaacsim.core.utils.prims import define_prim, get_prim_at_path
 from isaacsim.core.utils.rotations import (
     euler_to_rot_matrix,
@@ -44,7 +49,6 @@ from omni.isaac.nucleus import get_assets_root_path
 from omni.isaac.sensor import IMUSensor, LidarRtx
 from pxr import Usd, UsdGeom, UsdPhysics, Sdf
 
-# from omni.isaac.quadruped.robots import SpotFlatTerrainPolicy
 from isaacsim.robot.policy.examples.robots import SpotFlatTerrainPolicy
 
 
@@ -54,13 +58,14 @@ import usdrt.Sdf
 
 
 ext_manager = omni.kit.app.get_app().get_extension_manager()
-ext_manager.set_extension_enabled_immediate('isaacsim.ros2.bridge', True)
-ext_manager.set_extension_enabled_immediate('isaacsim.core.nodes', True)
-ext_manager.set_extension_enabled_immediate('omni.anim.curve.core', True)
-ext_manager.set_extension_enabled_immediate('omni.anim.curve.bundle', True)
-ext_manager.set_extension_enabled_immediate('omni.anim.window.timeline', True)
-ext_manager.set_extension_enabled_immediate('omni.kit.window.movie_capture', True)
-ext_manager.set_extension_enabled_immediate('isaacsim.sensors.physics', True)
+ext_manager.set_extension_enabled('isaacsim.ros2.bridge', True)
+ext_manager.set_extension_enabled('isaacsim.core.nodes', True)
+ext_manager.set_extension_enabled('omni.anim.curve.core', True)
+ext_manager.set_extension_enabled('omni.anim.curve.bundle', True)
+ext_manager.set_extension_enabled('omni.anim.window.timeline', True)
+ext_manager.set_extension_enabled('omni.kit.window.movie_capture', True)
+ext_manager.set_extension_enabled('isaacsim.sensors.physics', True)
+ext_manager.set_extension_enabled('omni.physx', True)
 
 carb.settings.get_settings().set('persistent/app/omniverse/gamepadCameraControl', False)
 
@@ -106,7 +111,7 @@ class Go2FlatTerrainPolicy:
 
                 prim.GetReferences().AddReference(asset_path)
 
-        self.robot = Articulation(
+        self.robot = SingleArticulation(
             prim_path=self._prim_path,
             name=name,
             position=position,
@@ -273,8 +278,6 @@ class SimulationWorld:
                 gauge_asset_path = 'omniverse://nucleus.fortableau.com/Projects/cec/Additional Model/hcl_gauge_and_stand.usdc'
                 gauge_prim.GetReferences().AddReference(gauge_asset_path)
 
-            self.world.reset()
-
         else:  # default
             prim = define_prim('/World/Ground', 'Xform')
             asset_path = (
@@ -283,6 +286,17 @@ class SimulationWorld:
             prim.GetReferences().AddReference(asset_path)
 
             self.spawn_random_objects(num_objects=10)
+        self._ensure_physics_scene()
+
+    def _ensure_physics_scene(self):
+        stage = omni.usd.get_context().get_stage()
+        for prim in stage.Traverse():
+            if prim.GetTypeName() == 'PhysicsScene':
+                return
+
+        scene = UsdPhysics.Scene.Define(stage, Sdf.Path('/World/physicsScene'))
+        scene.CreateGravityDirectionAttr().Set(Gf.Vec3f(0.0, 0.0, -1.0))
+        scene.CreateGravityMagnitudeAttr().Set(9.81)
 
     def add_colliders_to_all_meshes(self, root, approximation: str = 'convexHull'):
         """
@@ -935,6 +949,18 @@ class SpotSimulation(Simulation):
         )
 
 
+def wait_for_startup(num_frames=10):
+    app = omni.kit.app.get_app()
+    for _ in range(num_frames):
+        app.update()
+
+
+def ensure_timeline_playing():
+    timeline = omni.timeline.get_timeline_interface()
+    if not timeline.is_playing():
+        timeline.play()
+
+
 if __name__ == '__main__':
     import argparse
 
@@ -957,6 +983,13 @@ if __name__ == '__main__':
     parser.add_argument('--lidar', action='store_true', help='Use lidar')
 
     args = parser.parse_args()
+
+    if not simulation_app:
+        wait_for_startup(300)  # give PhysX/extensions time to come up
+        ensure_timeline_playing()  # start simulation
+        wait_for_startup(300)
+
+    args = parser.parse_args()
     world = SimulationWorld(args.env)
 
     if args.quadruped == 'go2':
@@ -964,7 +997,15 @@ if __name__ == '__main__':
     elif args.quadruped == 'spot':
         sim = SpotSimulation('spot', world, args.lidar)
 
-    while simulation_app.is_running():
-        world.world.step(render=True)
+    if simulation_app is not None:
+        while simulation_app.is_running():
+            world.world.step(render=True)
 
-    simulation_app.close()
+        simulation_app.close()
+    else:
+        # Kit mode: keep alive using app.update()
+        import omni.kit.app
+
+        app = omni.kit.app.get_app()
+        while app.is_running():
+            app.update()

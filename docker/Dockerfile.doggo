@@ -1,0 +1,5 @@
+FROM nvcr.io/nvidia/isaac-sim:5.1.0
+
+WORKDIR /app
+
+COPY doggo /app

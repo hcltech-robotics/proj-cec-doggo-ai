@@ -5,5 +5,5 @@ conda create -n omniverse-5.1 -y python==3.11
 
 conda activate omniverse-5.1
 
-pip install -r requirements5.1.txt
+pip install -r requirements5.1.txt --extra-index-url https://pypi.nvidia.com
 

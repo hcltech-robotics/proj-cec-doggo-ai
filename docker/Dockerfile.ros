@@ -1,0 +1,15 @@
+FROM ros:humble-ros-base
+
+WORKDIR /app
+
+COPY ros.ws /app
+
+RUN apt update
+RUN apt install python3-pip ros-humble-rmw-cyclonedds-cpp -y
+RUN python3 -m pip install --upgrade pip
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh && rosdep install --from-paths src --ignore-src -r -y
+
+RUN pip3 install --no-cache-dir -r ./src/requirements.txt
+RUN rm -rf build install log
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh && colcon build
+RUN . ./install/setup.sh

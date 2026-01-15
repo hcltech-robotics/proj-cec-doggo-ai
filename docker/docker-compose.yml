@@ -1,0 +1,67 @@
+services:
+  model-server:
+    build:
+      context: ../
+      dockerfile:  docker/Dockerfile.model-server
+    working_dir: /app
+    command: ["python3", "model_server.py", "--token", "doggodoggo", "--detector-model", "checkpoints/gauge_detect.pth", "--reader-model", "checkpoints/gauge_reader.pt"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all 
+              capabilities: [gpu, utility, compute]
+
+  ros-nodes:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.ros
+    working_dir: /app
+    device_cgroup_rules:
+      - 'c 13:* rmw'
+    volumes:
+      - /dev/input:/dev/input
+      - /dev/bus/usb:/dev/bus/usb
+    network_mode: "host"
+    gpus: all
+    environment:
+       ROS_DISTRO: humble
+       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+       MODEL_SERVER_URL: http://model-server:5000
+    command: ["bash", "/app/docker-entrypoint.sh"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all 
+              capabilities: [gpu, utility, compute]
+
+    depends_on:
+      - model-server
+
+  doggo:
+    build:
+      context: ../
+      dockerfile:  docker/Dockerfile.doggo
+    network_mode: host
+    gpus: all
+    volumes:
+      - ${HOME}/.nvidia-omniverse/config:/isaac-sim/.nvidia-omniverse/config:rw
+    environment:
+      ROS_DISTRO: humble
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      ACCEPT_EULA: Y
+      QUADRUPED: spot
+      ENV: default
+      ADDITIONAL_PARAMS: ""
+    entrypoint: ['bash', '-l']
+    command:  ["/app/docker-entrypoint.sh"]
+    depends_on:
+      - model-server
+      - ros-nodes
+    
+
+
+   

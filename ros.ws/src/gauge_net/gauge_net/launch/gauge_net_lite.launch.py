@@ -2,15 +2,15 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 import launch
-from launch.substitutions import LaunchConfiguration
 
+from launch.actions import RegisterEventHandler, Shutdown
+from launch.event_handlers import OnProcessExit
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
-    on_exit = LaunchConfiguration('on_exit', default='shutdown')
-
     package_name = 'gauge_net'
 
     # Get package share directory
@@ -87,13 +87,13 @@ def generate_launch_description():
     )
     foxglove_bridge_enable = LaunchConfiguration('foxglove_bridge_enable')
 
-    image_topic = ld.add_action(
+    ld.add_action(
         launch.actions.DeclareLaunchArgument(
             'image_topic', default_value=default_image_topic
         )
     )
 
-    camera_info_topic = ld.add_action(
+    ld.add_action(
         launch.actions.DeclareLaunchArgument(
             'camera_info_topic', default_value=default_camera_info_topic
         )
@@ -155,7 +155,12 @@ def generate_launch_description():
             apriltag_node,
         ],
         output='screen',
-        on_exit=on_exit,
+    )
+
+    ld.add_action(
+        RegisterEventHandler(
+            OnProcessExit(target_action=apriltag_container, on_exit=[Shutdown()])
+        )
     )
 
     ld.add_action(apriltag_container)
@@ -167,46 +172,64 @@ def generate_launch_description():
     # Parameters configuration file
     param_config = os.path.join(package_share_dir, 'config', 'config_lite.yaml')
 
+    gauge_reader_node = Node(
+        package=package_name,
+        executable='gauge_reader_lite',
+        name='gauge_reader',
+        parameters=[
+            qos_config,
+            param_config,
+            {
+                'model_server_url': model_server_url,
+                'token': token,
+                'use_math': use_math,
+            },
+        ],
+    )
+
+    ld.add_action(
+        RegisterEventHandler(
+            OnProcessExit(target_action=gauge_reader_node, on_exit=[Shutdown()])
+        )
+    )
+
     # Add gauge_reader node
-    ld.add_action(
-        Node(
-            package=package_name,
-            executable='gauge_reader_lite',
-            name='gauge_reader',
-            parameters=[
-                qos_config,
-                param_config,
-                {
-                    'model_server_url': model_server_url,
-                    'token': token,
-                    'use_math': use_math,
-                },
-            ],
-            on_exit=on_exit,
-        )
+    ld.add_action(gauge_reader_node)
+
+    teleop_node = Node(
+        package='teleop_twist_joy',
+        executable='teleop_node',
+        name='teleop_node',
+        output='screen',
+        parameters=[
+            {'enable_button': twist_joy_enable_button},
+            {'axis_angular.yaw': twist_joy_angular_yaw_button},
+            {'axis_linear.x': twist_joy_linear_linear_x_button},
+            {'scale_linear.x': 2.0},
+            {'scale_angular.z': 2.0},
+        ],
+        remappings=[('joy_vel', 'cmd_vel')],
     )
 
     ld.add_action(
-        Node(
-            package='teleop_twist_joy',
-            executable='teleop_node',
-            name='teleop_node',
-            output='screen',
-            parameters=[
-                {'enable_button': twist_joy_enable_button},
-                {'axis_angular.yaw': twist_joy_angular_yaw_button},
-                {'axis_linear.x': twist_joy_linear_linear_x_button},
-                {'scale_linear.x': 2.0},
-                {'scale_angular.z': 2.0},
-            ],
-            remappings=[('joy_vel', 'cmd_vel')],
-            on_exit=on_exit,
+        RegisterEventHandler(
+            OnProcessExit(target_action=teleop_node, on_exit=[Shutdown()])
         )
     )
 
-    ld.add_action(
-        Node(package='joy', executable='joy_node', name='joy_node', output='screen'),
+    ld.add_action(teleop_node)
+
+    joy_node = Node(
+        package='joy', executable='joy_node', name='joy_node', output='screen'
     )
+
+    ld.add_action(
+        RegisterEventHandler(
+            OnProcessExit(target_action=joy_node, on_exit=[Shutdown()])
+        )
+    )
+
+    ld.add_action(joy_node)
 
     foxglove_bridge_node = Node(
         package='foxglove_bridge',
@@ -222,6 +245,7 @@ def generate_launch_description():
         ],
         condition=launch.conditions.IfCondition(foxglove_bridge_enable),
     )
+
     ld.add_action(foxglove_bridge_node)
 
     return ld
