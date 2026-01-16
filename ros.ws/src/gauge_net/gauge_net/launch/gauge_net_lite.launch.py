@@ -21,9 +21,9 @@ def generate_launch_description():
     default_use_math = 'True'
     default_image_topic = '/quadruped/camera/rgb'
     default_camera_info_topic = '/quadruped/camera/camera_info'
-    default_twist_joy_enable_button = '5'
-    default_twist_joy_linear_x_button = '4'
-    default_twist_joy_angular_yaw_button = '3'
+    default_joy_enable_button = '5'
+    default_joy_linear_axis = '4'
+    default_joy_angular_axis = '3'
 
     # Create launch description
     ld = launch.LaunchDescription()
@@ -56,25 +56,25 @@ def generate_launch_description():
 
     ld.add_action(
         launch.actions.DeclareLaunchArgument(
-            'twist_joy_enable_button',
+            'joy_enable_button',
             description='',
-            default_value=default_twist_joy_enable_button,
+            default_value=default_joy_enable_button,
         )
     )
 
     ld.add_action(
         launch.actions.DeclareLaunchArgument(
-            'twist_joy_linear_linear_x_button',
+            'joy_linear_axis',
             description='',
-            default_value=default_twist_joy_linear_x_button,
+            default_value=default_joy_linear_axis,
         )
     )
 
     ld.add_action(
         launch.actions.DeclareLaunchArgument(
-            'twist_joy_angular_yaw_button',
+            'joy_angular_axis',
             description='',
-            default_value=default_twist_joy_angular_yaw_button,
+            default_value=default_joy_angular_axis,
         )
     )
 
@@ -108,14 +108,14 @@ def generate_launch_description():
     camera_info_topic = LaunchConfiguration(
         'camera_info_topic', default=default_camera_info_topic
     )
-    twist_joy_enable_button = LaunchConfiguration(
-        'twist_joy_enable_button', default=default_twist_joy_enable_button
+    joy_enable_button = LaunchConfiguration(
+        'joy_enable_button', default=default_joy_enable_button
     )
-    twist_joy_linear_linear_x_button = LaunchConfiguration(
-        'twist_joy_linear_linear_x_button', default=default_twist_joy_linear_x_button
+    joy_linear_axis = LaunchConfiguration(
+        'joy_linear_axis', default=default_joy_linear_axis
     )
-    twist_joy_angular_yaw_button = LaunchConfiguration(
-        'twist_joy_angular_yaw_button', default=default_twist_joy_angular_yaw_button
+    joy_angular_axis = LaunchConfiguration(
+        'joy_angular_axis', default=default_joy_angular_axis
     )
 
     rectify_node = ComposableNode(
@@ -202,9 +202,9 @@ def generate_launch_description():
         name='teleop_node',
         output='screen',
         parameters=[
-            {'enable_button': twist_joy_enable_button},
-            {'axis_angular.yaw': twist_joy_angular_yaw_button},
-            {'axis_linear.x': twist_joy_linear_linear_x_button},
+            {'enable_button': joy_enable_button},
+            {'axis_angular.yaw': joy_angular_axis},
+            {'axis_linear.x': joy_linear_axis},
             {'scale_linear.x': 2.0},
             {'scale_angular.z': 2.0},
         ],

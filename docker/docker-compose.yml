@@ -3,15 +3,12 @@ services:
     build:
       context: ../
       dockerfile:  docker/Dockerfile.model-server
+    network_mode: "host"
+    gpus:
+      all
     working_dir: /app
     command: ["python3", "model_server.py", "--token", "doggodoggo", "--detector-model", "checkpoints/gauge_detect.pth", "--reader-model", "checkpoints/gauge_reader.pt"]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all 
-              capabilities: [gpu, utility, compute]
+    
 
   ros-nodes:
     build:
@@ -28,16 +25,12 @@ services:
     environment:
        ROS_DISTRO: humble
        RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
-       MODEL_SERVER_URL: http://model-server:5000
+       USE_MATH: True
+       MODEL_SERVER_URL: http://127.0.0.1:5000
+       JOY_ENABLE_BUTTON: ${JOY_ENABLE_BUTTON:-5}
+       JOY_LINEAR_AXIS: ${JOY_LINEAR_AXIS:-4}
+       JOY_ANGULAR_AXIS: ${JOY_ANGULAR_AXIS:-3}
     command: ["bash", "/app/docker-entrypoint.sh"]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all 
-              capabilities: [gpu, utility, compute]
-
     depends_on:
       - model-server
 
@@ -49,12 +42,18 @@ services:
     gpus: all
     volumes:
       - ${HOME}/.nvidia-omniverse/config:/isaac-sim/.nvidia-omniverse/config:rw
+      - ./isaac-sim/cache/main:/isaac-sim/.cache:rw
+      - ./isaac-sim/cache/computecache:/isaac-sim/.nv/ComputeCache:rw
+      - ./isaac-sim/logs:/isaac-sim/.nvidia-omniverse/logs:rw
+      - ./isaac-sim/data:/isaac-sim/.local/share/ov/data:rw
+      - ./isaac-sim/pkg:/isaac-sim/.local/share/ov/pkg:rw
     environment:
       ROS_DISTRO: humble
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
       ACCEPT_EULA: Y
-      QUADRUPED: spot
-      ENV: default
+      PRIVACY_CONSENT: Y
+      QUADRUPED: ${QUADRUPED:-spot}
+      ENV: ${ENV:-default}
       ADDITIONAL_PARAMS: ""
     entrypoint: ['bash', '-l']
     command:  ["/app/docker-entrypoint.sh"]
