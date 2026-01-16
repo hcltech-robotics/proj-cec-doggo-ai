@@ -3,5 +3,5 @@ numpy
 pillow
 torch
 torchvision
-opencv-python
+opencv-python-headless
 flask

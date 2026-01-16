@@ -1,7 +1,5 @@
 isaacsim[all,extscache]==5.1.0.0
 usd-core
-torch
-torchvision
+torch==2.7.0
+torchvision==0.22.0
 numpy
-scipy
-requests

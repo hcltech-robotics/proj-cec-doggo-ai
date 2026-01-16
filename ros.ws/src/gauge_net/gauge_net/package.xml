@@ -13,8 +13,19 @@
   <test_depend>python3-pytest</test_depend>
 
   <depend>vision_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>rclpy</depend>
+
+  <exec_depend>joy</exec_depend>
+  <exec_depend>teleop_twist_joy</exec_depend>
   <exec_depend>gauge_net_interface</exec_depend>
   <exec_depend>apriltag_navigation</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>image_proc</exec_depend>
+  <exec_depend>apriltag_ros</exec_depend>
+
+
 
   <export>
     <build_type>ament_python</build_type>
